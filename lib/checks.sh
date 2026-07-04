@@ -29,10 +29,13 @@ is_3xui_running() {
     is_service_active "x-ui"
 }
 
-get_3xui_version() {
-    if is_3xui_installed; then
-        /usr/local/x-ui/x-ui version 2>/dev/null || echo "unknown"
-    fi
+get_latest_github_version() {
+    curl -sL "https://api.github.com/repos/mhsanaei/3x-ui/releases/latest" 2>/dev/null \
+        | jq -r '.tag_name' 2>/dev/null || echo ""
+}
+
+version_gt() {
+    test "$(printf '%s\n' "$@" | sort -V | head -n 1)" != "$1"
 }
 
 # --- SSL Certificate ---

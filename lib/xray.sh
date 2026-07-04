@@ -20,28 +20,19 @@ _upsert_inbound() {
     existing=$(sqlite3 "$db_path" "SELECT id FROM inbounds WHERE tag='${tag}' LIMIT 1;" 2>/dev/null || true)
 
     if [ -n "$existing" ]; then
-        log_info "Обновление inbound: ${tag} (порт ${port})"
-        sqlite3 "$db_path" "
-            UPDATE inbounds
-            SET port=${port},
-                protocol='${protocol}',
-                settings='${settings}',
-                stream_settings='${stream}',
-                sniffing='${sniffing}',
-                enable=1
-            WHERE tag='${tag}';
-        "
-    else
-        log_info "Создание inbound: ${tag} (порт ${port})"
-        sqlite3 "$db_path" "
-            INSERT INTO inbounds
-                (user_id, up, down, total, remark, enable, expiry_time,
-                 listen, port, protocol, settings, stream_settings, tag, sniffing)
-            VALUES
-                (1, 0, 0, 0, '${tag}', 1, 0, '',
-                 ${port}, '${protocol}', '${settings}', '${stream}', '${tag}', '${sniffing}');
-        "
+        log_info "Inbound ${tag} уже существует, пропускаю (клиенты сохранены)"
+        return 0
     fi
+
+    log_info "Создание inbound: ${tag} (порт ${port})"
+    sqlite3 "$db_path" "
+        INSERT INTO inbounds
+            (user_id, up, down, total, remark, enable, expiry_time,
+             listen, port, protocol, settings, stream_settings, tag, sniffing)
+        VALUES
+            (1, 0, 0, 0, '${tag}', 1, 0, '',
+             ${port}, '${protocol}', '${settings}', '${stream}', '${tag}', '${sniffing}');
+    "
 }
 
 # --------------------------------------------------

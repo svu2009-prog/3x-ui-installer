@@ -217,6 +217,7 @@ SHORT_ID="${SHORT_ID:-}"
 TROJAN_PASS="${TROJAN_PASS:-}"
 TROJAN_TLS_PASS="${TROJAN_TLS_PASS:-}"
 TIMESTAMP="${TIMESTAMP:-}"
+INSTALLED_VERSION="${INSTALLED_VERSION:-}"
 CRED_FILE="${CRED_FILE:-/root/x-ui-setup-credentials.txt}"
 EOF
     log_success "Конфигурация сохранена: ${CONFIG_FILE}"

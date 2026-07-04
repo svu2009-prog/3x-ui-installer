@@ -8,11 +8,25 @@ install_panel() {
     log_section "Установка 3X-UI панели"
 
     if is_3xui_installed && is_3xui_running; then
-        local version
-        version=$(get_3xui_version)
-        log_info "3X-UI уже установлен (версия: ${version}). Пропускаю установку."
-        log_info "Если нужно переустановить, выполните: rm -rf /usr/local/x-ui && re-run install.sh"
-        return 0
+        local latest_ver
+        latest_ver=$(get_latest_github_version)
+        if [ -n "$latest_ver" ] && [ "${INSTALLED_VERSION:-}" != "$latest_ver" ]; then
+            log_info "Доступна новая версия: ${latest_ver} (текущая: ${INSTALLED_VERSION:-unknown})"
+            local answer
+            read -p "$(echo -e "${YELLOW}Обновить панель до ${latest_ver}? [y/N]: ${NC}")" answer
+            if [[ ! "$answer" =~ ^[yY] ]]; then
+                log_info "Обновление отклонено"
+                return 0
+            fi
+            log_info "Обновление до ${latest_ver}..."
+        else
+            if [ -n "$latest_ver" ]; then
+                log_info "3X-UI актуален (${latest_ver}), пропускаю"
+            else
+                log_info "3X-UI уже установлен, пропускаю"
+            fi
+            return 0
+        fi
     fi
 
     log_info "Остановка предыдущей версии (если есть)..."
@@ -84,5 +98,7 @@ SERVICEEOF
         exit 1
     fi
 
-    log_success "3X-UI панель установлена (порт: ${PANEL_PORT}, путь: /${PANEL_PATH})"
+    # Save installed version for future idempotency checks
+    INSTALLED_VERSION=$(get_latest_github_version)
+    log_success "3X-UI панель установлена (порт: ${PANEL_PORT}, путь: /${PANEL_PATH}, версия: ${INSTALLED_VERSION:-unknown})"
 }
