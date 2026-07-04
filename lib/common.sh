@@ -89,6 +89,10 @@ _cleanup_on_error() {
 
 _cleanup_on_exit() {
     local exit_code=$?
+    # Clean up temporary bootstrap directory if it exists
+    if [ -n "${TMP_DIR:-}" ] && [ -d "$TMP_DIR" ]; then
+        rm -rf "$TMP_DIR"
+    fi
     if [ "$exit_code" -eq 0 ]; then
         log_info "=== 3X-UI Installer завершён успешно $(date '+%Y-%m-%d %H:%M:%S') ==="
     fi

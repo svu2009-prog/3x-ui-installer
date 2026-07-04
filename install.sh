@@ -11,6 +11,17 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="${SCRIPT_DIR}/lib"
 
+# Self-bootstrap: if lib/ not found (e.g. curl | bash), download repo to temp dir
+if [ ! -d "$LIB_DIR" ]; then
+    echo "[bootstrap] lib/ not found locally — downloading 3x-ui-installer from GitHub..."
+    TMP_DIR=$(mktemp -d)
+    curl -sL "https://github.com/svu2009-prog/3x-ui-installer/archive/refs/heads/master.tar.gz" \
+        | tar -xz -C "$TMP_DIR"
+    SCRIPT_DIR="${TMP_DIR}/3x-ui-installer-master"
+    LIB_DIR="${SCRIPT_DIR}/lib"
+    cd "$SCRIPT_DIR"
+fi
+
 for _lib in common checks firewall nginx panel xray; do
     # shellcheck disable=SC1090
     source "${LIB_DIR}/${_lib}.sh"

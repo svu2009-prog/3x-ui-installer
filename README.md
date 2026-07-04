@@ -28,7 +28,7 @@
 ### Вариант 1 — одной командой (curl)
 
 ```bash
-bash <(curl -sL https://github.com/svu2009-prog/3x-ui-installer/raw/master/install.sh)
+bash <(curl -sL https://raw.githubusercontent.com/svu2009-prog/3x-ui-installer/master/install.sh)
 ```
 
 ### Вариант 2 — клонирование и запуск
