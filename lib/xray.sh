@@ -28,8 +28,7 @@ _upsert_inbound() {
                 settings='${settings}',
                 stream_settings='${stream}',
                 sniffing='${sniffing}',
-                enable=1,
-                updated_at=$(date +%s%3N)
+                enable=1
             WHERE tag='${tag}';
         "
     else
