@@ -41,19 +41,18 @@ STUBEOF
 
     # ---- Step 1: temporary config for certbot (port 80 only) ----
     log_info "Временная конфигурация Nginx для получения сертификата..."
-    backup_file "$nginx_config"
 
-    cat > "$nginx_config" <<EOF
-server {
-    listen 80;
-    server_name ${DOMAIN};
-    root /var/www/html;
-    index index.html;
-    location / { try_files \$uri \$uri/ =404; }
-}
-EOF
+    # Local backup (NOT added to global BACKUP_FILES — avoids restore on unrelated errors)
+    local nginx_bak="${nginx_config}.bak.$$"
+    [ -f "$nginx_config" ] && cp -f "$nginx_config" "$nginx_bak"
 
-    nginx -t >/dev/null || { log_error "Конфигурация Nginx невалидна"; exit 1; }
+    _write_nginx "certbot" "$nginx_config"
+
+    nginx -t >/dev/null 2>&1 || {
+        [ -f "$nginx_bak" ] && cp -f "$nginx_bak" "$nginx_config" && rm -f "$nginx_bak"
+        log_error "Временная конфигурация Nginx невалидна"
+        exit 1
+    }
     systemctl restart nginx
 
     # ---- Step 2: obtain / renew SSL certificate ----
@@ -81,9 +80,36 @@ EOF
 
     # ---- Step 4: final Nginx config (redirect 80→443, panel on 8080) ----
     log_info "Финальная конфигурация Nginx..."
-    backup_file "$nginx_config"
 
-    cat > "$nginx_config" <<EOF
+    _write_nginx "final" "$nginx_config"
+
+    nginx -t || {
+        [ -f "$nginx_bak" ] && cp -f "$nginx_bak" "$nginx_config"
+        log_error "Финальная конфигурация Nginx невалидна"
+        exit 1
+    }
+    rm -f "$nginx_bak"
+    systemctl restart nginx
+    log_success "Nginx и SSL настроены"
+}
+
+# Helper: write nginx config based on mode
+_write_nginx() {
+    local mode="$1"
+    local target="$2"
+
+    if [ "$mode" = "certbot" ]; then
+        cat > "$target" <<EOF
+server {
+    listen 80;
+    server_name ${DOMAIN};
+    root /var/www/html;
+    index index.html;
+    location / { try_files \$uri \$uri/ =404; }
+}
+EOF
+    else
+        cat > "$target" <<EOF
 server {
     listen 80;
     server_name ${DOMAIN};
@@ -97,8 +123,5 @@ server {
     location / { try_files \$uri \$uri/ =404; }
 }
 EOF
-
-    nginx -t || { log_error "Конфигурация Nginx невалидна"; exit 1; }
-    systemctl restart nginx
-    log_success "Nginx и SSL настроены"
+    fi
 }
