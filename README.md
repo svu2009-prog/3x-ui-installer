@@ -23,6 +23,32 @@
 | Nginx + Certbot | SSL терминация, редирект 80→443 |
 | UFW | Firewall с минимальными правилами |
 
+## Быстрый старт на VPS
+
+### Вариант 1 — одной командой (curl)
+
+```bash
+bash <(curl -sL https://github.com/svu2009-prog/3x-ui-installer/raw/master/install.sh)
+```
+
+### Вариант 2 — клонирование и запуск
+
+```bash
+apt-get update -y && apt-get install -y git
+git clone https://github.com/svu2009-prog/3x-ui-installer.git
+cd 3x-ui-installer
+sudo bash install.sh
+```
+
+### Вариант 3 — скачивание ZIP
+
+```bash
+apt-get update -y && apt-get install -y curl unzip
+curl -L -o 3x-ui-installer.zip https://github.com/svu2009-prog/3x-ui-installer/archive/refs/heads/master.zip
+unzip 3x-ui-installer.zip && cd 3x-ui-installer-master
+sudo bash install.sh
+```
+
 ## Использование
 
 ```bash
@@ -30,9 +56,9 @@ sudo bash install.sh
 ```
 
 При первом запуске скрипт запросит:
-1. Доменное имя
-2. Email для Let's Encrypt
-3. External Proxy Address
+1. **Доменное имя** — например, `vps.example.com`
+2. **Email** — для регистрации в Let's Encrypt
+3. **External Proxy Address** — IP или домен для CDN/маршрутизации Trojan Reality (может совпадать с доменом)
 
 При повторном запуске скрипт:
 - прочитает сохранённую конфигурацию (`/etc/3x-ui-installer/config.conf`)
