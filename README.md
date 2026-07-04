@@ -25,25 +25,32 @@
 
 ## Быстрый старт на VPS
 
-### Вариант 1 — одной командой (curl)
+### Вариант 1 — одной командой (curl, рекомендуется)
 
 ```bash
+bash <(curl -sL https://raw.githubusercontent.com/svu2009-prog/3x-ui-installer/master/quick-install.sh)
+```
+
+### Вариант 2 — через скрипт install.sh напрямую
+
+```bash
+sudo apt-get update -y && sudo apt-get install -y curl
 bash <(curl -sL https://raw.githubusercontent.com/svu2009-prog/3x-ui-installer/master/install.sh)
 ```
 
-### Вариант 2 — клонирование и запуск
+### Вариант 3 — клонирование и запуск
 
 ```bash
-apt-get update -y && apt-get install -y git
+sudo apt-get update -y && sudo apt-get install -y git
 git clone https://github.com/svu2009-prog/3x-ui-installer.git
 cd 3x-ui-installer
 sudo bash install.sh
 ```
 
-### Вариант 3 — скачивание ZIP
+### Вариант 4 — скачивание ZIP
 
 ```bash
-apt-get update -y && apt-get install -y curl unzip
+sudo apt-get update -y && sudo apt-get install -y curl unzip
 curl -L -o 3x-ui-installer.zip https://github.com/svu2009-prog/3x-ui-installer/archive/refs/heads/master.zip
 unzip 3x-ui-installer.zip && cd 3x-ui-installer-master
 sudo bash install.sh
