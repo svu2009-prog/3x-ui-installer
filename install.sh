@@ -103,6 +103,64 @@ start_services() {
     log_success "Сервисы запущены"
 }
 
+verify_setup() {
+    log_section "Проверка установки"
+
+    local errors=0
+
+    # 1. Service status
+    if is_service_active "x-ui"; then
+        log_success "x-ui: active"
+    else
+        log_error "x-ui: не запущен (journalctl -u x-ui -e)"
+        ((errors++)) || true
+    fi
+
+    if is_service_active "nginx"; then
+        log_success "nginx: active"
+    else
+        log_error "nginx: не запущен"
+        ((errors++)) || true
+    fi
+
+    sleep 2
+
+    # 2. Check nginx stub page on 8080
+    local stub
+    stub=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080 2>/dev/null || true)
+    if [ "$stub" = "200" ]; then
+        log_success "Страница-заглушка nginx (8080): доступна (HTTP ${stub})"
+    else
+        log_warn "Страница-заглушка nginx (8080): недоступна (HTTP ${stub:-нет ответа})"
+        ((errors++)) || true
+    fi
+
+    # 3. Check xray port 443 via localhost (TLS)
+    local xray_443
+    xray_443=$(curl -sk -o /dev/null -w "%{http_code}" --connect-timeout 5 https://127.0.0.1:443 2>/dev/null || true)
+    if [ "$xray_443" = "200" ]; then
+        log_success "Xray fallback (443 → 8080): работает (HTTP ${xray_443})"
+    else
+        log_warn "Xray fallback (443 → 8080): не отвечает (HTTP ${xray_443:-нет ответа})"
+        log_warn "Возможно: сертификаты недоступны или inbound не настроен"
+        ((errors++)) || true
+    fi
+
+    # 4. Check port 443 from inside
+    if ss -tlnp 2>/dev/null | grep -q ":443 "; then
+        log_success "Порт 443: слушается"
+    else
+        log_warn "Порт 443: никто не слушает"
+        ((errors++)) || true
+    fi
+
+    if [ "$errors" -gt 0 ]; then
+        log_warn "Обнаружено ${errors} проблем. Проверьте журналы: journalctl -u x-ui -e --no-pager"
+    else
+        log_success "Все проверки пройдены"
+    fi
+}
+
 show_summary() {
     log_section "Итог установки"
 
@@ -189,6 +247,9 @@ main() {
     generate_xray_keys
     configure_inbounds
     start_services
+
+    # Verify all components
+    verify_setup
 
     # Persist config for future runs
     save_config

@@ -9,11 +9,35 @@ setup_nginx_ssl() {
 
     local nginx_config="/etc/nginx/sites-available/default"
 
-    # Ensure web root exists
+    # Ensure web root and stub page
     mkdir -p /var/www/html
-    if [ ! -f /var/www/html/index.html ]; then
-        echo "<!DOCTYPE html><html><head><title>Welcome!</title></head><body><h1>OK</h1></body></html>" > /var/www/html/index.html
-    fi
+    cat > /var/www/html/index.html <<'STUBEOF'
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Server is running</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+         display: flex; justify-content: center; align-items: center; height: 100vh;
+         margin: 0; background: #0f0f1a; color: #e0e0e0; }
+  .card { text-align: center; padding: 2rem; max-width: 480px; }
+  h1 { font-size: 2rem; margin-bottom: 0.5rem; color: #4ade80; }
+  p { color: #94a3b8; line-height: 1.6; }
+  .badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 999px;
+           background: #1e293b; color: #4ade80; font-size: 0.8rem; margin-top: 1rem; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>✓ Server Active</h1>
+  <p>This server is running and ready for secure proxy connections.</p>
+  <div class="badge">3X-UI Panel</div>
+</div>
+</body>
+</html>
+STUBEOF
 
     # ---- Step 1: temporary config for certbot (port 80 only) ----
     log_info "Временная конфигурация Nginx для получения сертификата..."
