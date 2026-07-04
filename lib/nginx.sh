@@ -73,7 +73,13 @@ EOF
         log_success "SSL сертификат получен"
     fi
 
-    # ---- Step 3: final Nginx config (redirect 80→443, panel on 8080) ----
+    # ---- Step 3: copy certs to stable path for xray (no symlinks) ----
+    log_info "Копирование сертификатов в /etc/x-ui/ssl/ (для xray)..."
+    mkdir -p /etc/x-ui/ssl
+    cp -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" /etc/x-ui/ssl/fullchain.pem
+    cp -f "/etc/letsencrypt/live/${DOMAIN}/privkey.pem"   /etc/x-ui/ssl/privkey.pem
+
+    # ---- Step 4: final Nginx config (redirect 80→443, panel on 8080) ----
     log_info "Финальная конфигурация Nginx..."
     backup_file "$nginx_config"
 

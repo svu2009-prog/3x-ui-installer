@@ -5,7 +5,7 @@
 # ============================================================
 
 # --------------------------------------------------
-# Upsert a single inbound (INSERT if not exists, UPDATE if exists)
+# Insert a single inbound (only if not exists — preserves existing clients)
 # --------------------------------------------------
 _upsert_inbound() {
     local db_path="$1"
@@ -33,6 +33,32 @@ _upsert_inbound() {
             (1, 0, 0, 0, '${tag}', 1, 0, '',
              ${port}, '${protocol}', '${settings}', '${stream}', '${tag}', '${sniffing}');
     "
+}
+
+# --------------------------------------------------
+# Update certificate paths in an existing inbound's stream_settings
+# (preserves all clients and other settings)
+# --------------------------------------------------
+_update_inbound_cert() {
+    local db_path="$1"
+    local tag="$2"
+
+    local old_stream
+    old_stream=$(sqlite3 "$db_path" "SELECT stream_settings FROM inbounds WHERE tag='${tag}' LIMIT 1;" 2>/dev/null || true)
+
+    if [ -z "$old_stream" ]; then
+        return 0
+    fi
+
+    local new_stream
+    new_stream=$(echo "$old_stream" | jq -c \
+        '.tlsSettings.certificates[0].certificateFile = "/etc/x-ui/ssl/fullchain.pem" |
+         .tlsSettings.certificates[0].keyFile = "/etc/x-ui/ssl/privkey.pem"' 2>/dev/null || echo "$old_stream")
+
+    if [ "$new_stream" != "$old_stream" ]; then
+        sqlite3 "$db_path" "UPDATE inbounds SET stream_settings='${new_stream}' WHERE tag='${tag}';"
+        log_info "Сертификаты обновлены для inbound ${tag}"
+    fi
 }
 
 # --------------------------------------------------
@@ -88,8 +114,8 @@ configure_inbounds() {
     systemctl stop x-ui >/dev/null 2>&1 || true
 
     local db_path="/etc/x-ui/x-ui.db"
-    local cert="/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
-    local key="/etc/letsencrypt/live/${DOMAIN}/privkey.pem"
+    local cert="/etc/x-ui/ssl/fullchain.pem"
+    local key="/etc/x-ui/ssl/privkey.pem"
 
     if [ ! -f "$db_path" ]; then
         log_error "База данных не найдена: ${db_path}"
@@ -99,9 +125,9 @@ configure_inbounds() {
     # Backup DB
     backup_file "$db_path"
 
-    # ---- Set SSL certs for panel web UI ----
-    sqlite3 "$db_path" "INSERT OR REPLACE INTO settings (key, value) VALUES ('webCertFile', '${cert}');"
-    sqlite3 "$db_path" "INSERT OR REPLACE INTO settings (key, value) VALUES ('webKeyFile', '${key}');"
+    # ---- Set SSL certs for panel web UI (copied certs, no symlinks) ----
+    sqlite3 "$db_path" "INSERT OR REPLACE INTO settings (key, value) VALUES ('webCertFile', '/etc/x-ui/ssl/fullchain.pem');"
+    sqlite3 "$db_path" "INSERT OR REPLACE INTO settings (key, value) VALUES ('webKeyFile', '/etc/x-ui/ssl/privkey.pem');"
     log_info "SSL сертификаты панели применены"
 
     # ---- 1. VLESS TCP TLS (443) ----
@@ -116,14 +142,16 @@ configure_inbounds() {
     local vless_stream
     vless_stream=$(jq -nc \
         --arg domain "$DOMAIN" \
-        '{network:"tcp",security:"tls",tcpSettings:{header:{type:"none"}},tlsSettings:{serverName:$domain,certificates:[{certificateFile:("/etc/letsencrypt/live/"+$domain+"/fullchain.pem"),keyFile:("/etc/letsencrypt/live/"+$domain+"/privkey.pem")}],alpn:["h2","http/1.1"]}}')
+        '{network:"tcp",security:"tls",tcpSettings:{header:{type:"none"}},tlsSettings:{serverName:$domain,certificates:[{certificateFile:"/etc/x-ui/ssl/fullchain.pem",keyFile:"/etc/x-ui/ssl/privkey.pem"}],alpn:["h2","http/1.1"]}}')
 
     _upsert_inbound "$db_path" "inbound-443" 443 "vless" \
         "$vless_settings" "$vless_stream" \
         '{"enabled":true,"destOverride":["http","tls"]}'
 
+    # Update cert paths if inbound already existed (fix symlink issues)
+    _update_inbound_cert "$db_path" "inbound-443"
+
     # ---- 2. Trojan gRPC Reality ----
-    log_info "Формирование inbound Trojan Reality..."
     local trojan_settings
     trojan_settings=$(jq -nc \
         --arg pass "$TROJAN_PASS" \
@@ -156,11 +184,14 @@ configure_inbounds() {
     local trojan_tls_stream
     trojan_tls_stream=$(jq -nc \
         --arg domain "$DOMAIN" \
-        '{network:"grpc",grpcSettings:{serviceName:"",authority:"",multiMode:false},security:"tls",tlsSettings:{serverName:$domain,minVersion:"1.2",maxVersion:"1.3",cipherSuites:"",rejectUnknownSni:false,disableSystemRoot:false,enableSessionResumption:false,certificates:[{certificateFile:("/etc/letsencrypt/live/"+$domain+"/fullchain.pem"),keyFile:("/etc/letsencrypt/live/"+$domain+"/privkey.pem"),ocspStapling:0,oneTimeLoading:false,usage:"encipherment",buildChain:false,useFile:true}],alpn:["http/1.1"],echServerKeys:"",settings:{fingerprint:"chrome",echConfigList:"",pinnedPeerCertSha256:[],verifyPeerCertByName:""}}}')
+        '{network:"grpc",grpcSettings:{serviceName:"",authority:"",multiMode:false},security:"tls",tlsSettings:{serverName:$domain,minVersion:"1.2",maxVersion:"1.3",cipherSuites:"",rejectUnknownSni:false,disableSystemRoot:false,enableSessionResumption:false,certificates:[{certificateFile:"/etc/x-ui/ssl/fullchain.pem",keyFile:"/etc/x-ui/ssl/privkey.pem",ocspStapling:0,oneTimeLoading:false,usage:"encipherment",buildChain:false,useFile:true}],alpn:["http/1.1"],echServerKeys:"",settings:{fingerprint:"chrome",echConfigList:"",pinnedPeerCertSha256:[],verifyPeerCertByName:""}}}')
 
     _upsert_inbound "$db_path" "inbound-${TROJAN_TLS_PORT}" "$TROJAN_TLS_PORT" "trojan" \
         "$trojan_tls_settings" "$trojan_tls_stream" \
         '{"enabled":true,"destOverride":["http","tls","quic","fakedns"]}'
+
+    # Update cert paths for existing TLS inbounds
+    _update_inbound_cert "$db_path" "inbound-${TROJAN_TLS_PORT}"
 
     log_success "Inbounds настроены (VLESS:443, Trojan-reality:${TROJAN_PORT}, Trojan-tls:${TROJAN_TLS_PORT})"
 }
