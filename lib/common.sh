@@ -77,7 +77,7 @@ _cleanup_on_error() {
                 local original="${backup%.bak.*}"
                 if [ -n "$original" ] && [ -f "$backup" ]; then
                     cp -f "$backup" "$original" 2>/dev/null || true
-                    ((restored++))
+                    restored=$((restored + 1))
                 fi
             fi
         done

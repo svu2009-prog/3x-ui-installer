@@ -26,11 +26,11 @@ configure_firewall() {
         fi
         if is_ufw_rule_exists "$port"; then
             log_debug "Порт ${port}/tcp уже разрешён"
-            ((skipped++))
+            skipped=$((skipped + 1))
         else
             log_info "Разрешаю порт ${port}/tcp"
             ufw allow "${port}/tcp" >/dev/null
-            ((added++))
+            added=$((added + 1))
         fi
     done
 
