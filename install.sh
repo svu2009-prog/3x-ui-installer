@@ -135,23 +135,42 @@ verify_setup() {
         ((errors++)) || true
     fi
 
-    # 3. Check xray port 443 via localhost (TLS)
+    # 3. Check xray port 443 via localhost (TLS) with correct SNI
     local xray_443
-    xray_443=$(curl -sk -o /dev/null -w "%{http_code}" --connect-timeout 5 https://127.0.0.1:443 2>/dev/null || true)
+    xray_443=$(curl -sk -o /dev/null -w "%{http_code}" --connect-timeout 5 \
+        --resolve "${DOMAIN}:443:127.0.0.1" "https://${DOMAIN}:443" 2>/dev/null || true)
     if [ "$xray_443" = "200" ]; then
-        log_success "Xray fallback (443 → 8080): работает (HTTP ${xray_443})"
+        log_success "Xray fallback (443 → nginx:8080): работает (HTTP ${xray_443})"
     else
-        log_warn "Xray fallback (443 → 8080): не отвечает (HTTP ${xray_443:-нет ответа})"
-        log_warn "Возможно: сертификаты недоступны или inbound не настроен"
+        log_warn "Xray fallback (443 → nginx:8080): не отвечает (HTTP ${xray_443:-нет ответа})"
+        log_warn "Возможно: сертификаты Let's Encrypt недоступны для xray"
+        log_warn "Проверьте: ls -la /etc/letsencrypt/live/${DOMAIN}/"
         ((errors++)) || true
     fi
 
     # 4. Check port 443 from inside
     if ss -tlnp 2>/dev/null | grep -q ":443 "; then
-        log_success "Порт 443: слушается"
+        log_success "Порт 443: слушается xray"
     else
         log_warn "Порт 443: никто не слушает"
         ((errors++)) || true
+    fi
+
+    # 5. DNS check for the domain
+    local dns_ip
+    dns_ip=$(dig +short "$DOMAIN" 2>/dev/null || host "$DOMAIN" 2>/dev/null | awk '{print $NF}' || true)
+    local server_ip
+    server_ip=$(curl -s ifconfig.me 2>/dev/null || curl -s icanhazip.com 2>/dev/null || true)
+    if [ -n "$dns_ip" ] && [ -n "$server_ip" ]; then
+        if [ "$dns_ip" = "$server_ip" ]; then
+            log_success "DNS: ${DOMAIN} → ${dns_ip} (совпадает с IP сервера)"
+        else
+            log_warn "DNS: ${DOMAIN} → ${dns_ip}, но IP сервера = ${server_ip}"
+            log_warn "Создайте A-запись: ${DOMAIN} → ${server_ip}"
+            ((errors++)) || true
+        fi
+    else
+        log_info "DNS: не удалось проверить (пропускаю)"
     fi
 
     if [ "$errors" -gt 0 ]; then
