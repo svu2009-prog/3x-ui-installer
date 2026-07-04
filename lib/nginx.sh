@@ -17,23 +17,29 @@ setup_nginx_ssl() {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Server is running</title>
+<title>Сайт в разработке</title>
 <style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-         display: flex; justify-content: center; align-items: center; height: 100vh;
-         margin: 0; background: #0f0f1a; color: #e0e0e0; }
-  .card { text-align: center; padding: 2rem; max-width: 480px; }
-  h1 { font-size: 2rem; margin-bottom: 0.5rem; color: #4ade80; }
-  p { color: #94a3b8; line-height: 1.6; }
-  .badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 999px;
-           background: #1e293b; color: #4ade80; font-size: 0.8rem; margin-top: 1rem; }
+         display: flex; justify-content: center; align-items: center; min-height: 100vh;
+         background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%); color: #e0e0e0; }
+  .card { text-align: center; padding: 3rem 2rem; max-width: 520px; width: 90%; }
+  .icon { font-size: 4rem; margin-bottom: 1rem; }
+  h1 { font-size: 1.8rem; font-weight: 600; margin-bottom: 1rem; color: #f0f0f0; }
+  p { color: #94a3b8; line-height: 1.7; font-size: 1.05rem; margin-bottom: 0.5rem; }
+  .loader { display: inline-block; width: 40px; height: 40px; border: 3px solid #1e293b;
+            border-top-color: #4ade80; border-radius: 50%; animation: spin .8s linear infinite;
+            margin-top: 1.5rem; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
 <div class="card">
-  <h1>✓ Server Active</h1>
-  <p>This server is running and ready for secure proxy connections.</p>
-  <div class="badge">3X-UI Panel</div>
+  <div class="icon">🚧</div>
+  <h1>Сайт находится в разработке</h1>
+  <p>Ведутся технические работы.</p>
+  <p>Сайт будет запущен в ближайшее время.</p>
+  <div class="loader"></div>
 </div>
 </body>
 </html>
