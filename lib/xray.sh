@@ -137,12 +137,12 @@ configure_inbounds() {
         --arg uuid "$UUID" \
         --arg sub "$SUB_ID_VLESS" \
         --argjson ts "$TIMESTAMP" \
-        '{clients:[{id:$uuid,flow:"xtls-rprx-vision",email:"vless_tls@3x-ui",limitIp:0,totalGB:0,expiryTime:0,enable:true,tgId:"",subId:$sub,comment:"",reset:0,created_at:$ts,updated_at:$ts}],decryption:"none",fallbacks:[{dest:"127.0.0.1:8080",xver:0}]}')
+        '{clients:[{id:$uuid,flow:"xtls-rprx-vision",email:"vless_tls@3x-ui",limitIp:0,totalGB:0,expiryTime:0,enable:true,tgId:0,subId:$sub,comment:"",reset:0,created_at:$ts,updated_at:$ts}],decryption:"none",encryption:"none",fallbacks:[{alpn:"",dest:"127.0.0.1:8080",name:"",path:"",xver:0}],testseed:[900,500,900,256]}')
 
     local vless_stream
     vless_stream=$(jq -nc \
         --arg domain "$DOMAIN" \
-        '{network:"tcp",security:"tls",tcpSettings:{header:{type:"none"}},tlsSettings:{serverName:$domain,certificates:[{certificateFile:"/etc/x-ui/ssl/fullchain.pem",keyFile:"/etc/x-ui/ssl/privkey.pem"}],alpn:["h2","http/1.1"]}}')
+        '{network:"tcp",tcpSettings:{acceptProxyProtocol:false,header:{type:"none"}},security:"tls",tlsSettings:{serverName:$domain,minVersion:"1.2",maxVersion:"1.3",cipherSuites:"",rejectUnknownSni:false,disableSystemRoot:false,enableSessionResumption:false,certificates:[{certificateFile:"/etc/x-ui/ssl/fullchain.pem",keyFile:"/etc/x-ui/ssl/privkey.pem",ocspStapling:0,oneTimeLoading:false,usage:"encipherment",buildChain:false,useFile:true}],alpn:["http/1.1"],echServerKeys:"",settings:{fingerprint:"chrome",echConfigList:"",pinnedPeerCertSha256:[],verifyPeerCertByName:""}}}')
 
     _upsert_inbound "$db_path" "inbound-443" 443 "vless" \
         "$vless_settings" "$vless_stream" \
