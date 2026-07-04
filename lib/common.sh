@@ -168,7 +168,7 @@ detect_architecture() {
 generate_random_string() {
     local length="$1"
     local chars="${2:-A-Za-z0-9}"
-    LC_ALL=C tr -dc "$chars" < /dev/urandom | head -c "$length"
+    LC_ALL=C tr -dc "$chars" < /dev/urandom 2>/dev/null | head -c "$length" || true
 }
 
 generate_random_port() {
