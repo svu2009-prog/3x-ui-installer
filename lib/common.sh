@@ -172,7 +172,76 @@ generate_random_string() {
 }
 
 generate_random_port() {
-    echo $((RANDOM % 50000 + 10000))
+    # Генерирует свободный TCP-порт в диапазоне 10000–59999.
+    # Принимает необязательный список уже занятых портов (для уникальности внутри вызова),
+    # например: generate_random_port "$PANEL_PORT" "$TROJAN_PORT"
+    local used=("$@")
+    local port
+    local attempts=0
+    while [ $attempts -lt 50 ]; do
+        port=$((RANDOM % 50000 + 10000))
+        local conflict=0
+        # не совпадает ли с уже сгенерированными в этом вызове
+        for u in "${used[@]}"; do
+            if [ "$u" = "$port" ]; then
+                conflict=1
+                break
+            fi
+        done
+        # не из служебных (22, 80, 443, 8080 и т.п.)
+        case "$port" in
+            22|80|443|8080) conflict=1 ;;
+        esac
+        if [ $conflict -eq 0 ] && ! command -v ss >/dev/null 2>&1; then
+            echo "$port"; return 0
+        fi
+        if [ $conflict -eq 0 ] && ! ss -tlnH 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}\$"; then
+            echo "$port"; return 0
+        fi
+        attempts=$((attempts + 1))
+    done
+    # fallback — вернуть хоть что-то валидное, проверка в verify_setup покажет конфликт
+    echo "$((RANDOM % 50000 + 10000))"
+}
+
+# ============================================================
+# INPUT VALIDATION
+# ============================================================
+# Валидация доменного имени: метки из букв/цифр/дефисов, разделённые точками.
+is_valid_domain() {
+    local domain="$1"
+    [ -n "$domain" ] || return 1
+    # 1-253 символа, только a-zA-Z0-9.-, минимум одна точка, метки 1-63 символа
+    [[ "$domain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$ ]] || return 1
+    [[ "$domain" == *.* ]] || return 1
+    [ "${#domain}" -le 253 ] || return 1
+    # Запрет пробелов и пустых меток (двойные точки)
+    [[ "$domain" != *" "* ]] || return 1
+    [[ "$domain" != *".."* ]] || return 1
+    return 0
+}
+
+# Валидация email: локальная часть@домен (упрощённая проверка).
+is_valid_email() {
+    local email="$1"
+    [ -n "$email" ] || return 1
+    [[ "$email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || return 1
+    return 0
+}
+
+# Валидация хоста (домен или IPv4) для External Proxy.
+is_valid_host_or_ip() {
+    local host="$1"
+    [ -n "$host" ] || return 1
+    # IPv4
+    if [[ "$host" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+        local IFS=.
+        read -r a b c d <<< "$host"
+        [ "$a" -le 255 ] && [ "$b" -le 255 ] && [ "$c" -le 255 ] && [ "$d" -le 255 ] 2>/dev/null
+        return $?
+    fi
+    # Иначе домен
+    is_valid_domain "$host"
 }
 
 # ============================================================
@@ -191,6 +260,7 @@ load_config() {
 
 save_config() {
     mkdir -p "$CONFIG_DIR"
+    chmod 700 "$CONFIG_DIR" 2>/dev/null || true
     cat > "$CONFIG_FILE" <<EOF
 # 3X-UI Installer Configuration
 # Auto-generated: $(date '+%Y-%m-%d %H:%M:%S')
@@ -220,29 +290,53 @@ TIMESTAMP="${TIMESTAMP:-}"
 INSTALLED_VERSION="${INSTALLED_VERSION:-}"
 CRED_FILE="${CRED_FILE:-/root/x-ui-setup-credentials.txt}"
 EOF
+    chmod 600 "$CONFIG_FILE" 2>/dev/null || true
     log_success "Конфигурация сохранена: ${CONFIG_FILE}"
 }
 
 # ============================================================
 # INTERACTIVE PROMPT (with saved default)
 # ============================================================
+# prompt_with_default <prompt_text> <default> <var_name> [validator_fn]
+# Если значение уже задано (из сохранённого конфига) — перезапрашивать не будем,
+# но при наличии validator_fn проверим и сохранённое значение.
 prompt_with_default() {
     local prompt="$1"
     local default="${2:-}"
     local var_name="$3"
+    local validator="${4:-}"
 
+    # Если уже задано из конфига — опционально валидируем, но не переспрашиваем
     if [ -n "${!var_name:-}" ]; then
-        log_info "${prompt}: используем сохранённое значение"
-        return
+        if [ -n "$validator" ] && ! "$validator" "${!var_name}"; then
+            log_warn "Сохранённое значение '${!var_name}' невалидно, перезапрашиваю"
+        else
+            log_info "${prompt}: используем сохранённое значение"
+            return
+        fi
+        # обнуляем невалидное значение, чтобы войти в цикл ввода
+        printf -v "$var_name" '%s' ""
     fi
 
     local value
-    if [ -n "$default" ]; then
-        read -p "$(echo -e "${CYAN}${prompt}${NC} [${GREEN}${default}${NC}]: ")" value
-        value="${value:-$default}"
-    else
-        read -p "$(echo -e "${CYAN}${prompt}${NC}: ")" value
-    fi
+    while true; do
+        if [ -n "$default" ]; then
+            read -p "$(echo -e "${CYAN}${prompt}${NC} [${GREEN}${default}${NC}]: ")" value
+            value="${value:-$default}"
+        else
+            read -p "$(echo -e "${CYAN}${prompt}${NC}: ")" value
+        fi
+
+        if [ -z "$value" ]; then
+            log_error "Значение не может быть пустым"
+            continue
+        fi
+        if [ -n "$validator" ] && ! "$validator" "$value"; then
+            log_error "Невалидное значение. Попробуйте снова."
+            continue
+        fi
+        break
+    done
 
     printf -v "$var_name" '%s' "$value"
 }

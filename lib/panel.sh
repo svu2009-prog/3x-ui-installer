@@ -7,9 +7,25 @@
 install_panel() {
     log_section "Установка 3X-UI панели"
 
-    if is_3xui_installed && is_3xui_running; then
+    local db_path="/etc/x-ui/x-ui.db"
+    # need_fresh=1 → первичная установка (нет БД); 0 → переустановка/обновление (БД сохранить!)
+    local need_fresh=1
+    if is_3xui_installed || [ -f "$db_path" ]; then
+        need_fresh=0
+    fi
+
+    # ---- Уже установлено: решаем, нужно ли обновление ----
+    if [ "$need_fresh" -eq 0 ]; then
         local latest_ver
         latest_ver=$(get_latest_github_version)
+
+        # Актуально и запущено → ничего не делаем
+        if is_3xui_running && { [ -z "$latest_ver" ] || [ "${INSTALLED_VERSION:-}" = "$latest_ver" ]; }; then
+            log_info "3X-UI актуален (${latest_ver:-неизвестно}) и запущен, пропускаю"
+            return 0
+        fi
+
+        # Есть новая версия → спросим пользователя
         if [ -n "$latest_ver" ] && [ "${INSTALLED_VERSION:-}" != "$latest_ver" ]; then
             log_info "Доступна новая версия: ${latest_ver} (текущая: ${INSTALLED_VERSION:-unknown})"
             local answer
@@ -18,22 +34,31 @@ install_panel() {
                 log_info "Обновление отклонено"
                 return 0
             fi
-            log_info "Обновление до ${latest_ver}..."
-        else
-            if [ -n "$latest_ver" ]; then
-                log_info "3X-UI актуален (${latest_ver}), пропускаю"
-            else
-                log_info "3X-UI уже установлен, пропускаю"
-            fi
-            return 0
+            log_info "Обновление до ${latest_ver} (БД и клиенты сохраняются)..."
+        elif ! is_3xui_running; then
+            # Установлено, но не запущено — переустановим бинарники для восстановления (БД сохраняем)
+            log_warn "3X-UI установлен, но не запущен. Переустановка бинарников (БД сохраняется)..."
         fi
     fi
 
+    # ---- Остановка сервиса ----
     log_info "Остановка предыдущей версии (если есть)..."
     systemctl stop x-ui >/dev/null 2>&1 || true
 
-    log_info "Удаление старых файлов..."
-    rm -rf /usr/local/x-ui /etc/x-ui /etc/systemd/system/x-ui.service /usr/bin/x-ui
+    # ---- Резервная копия БД перед любыми разрушающими операциями (защита от ошибок) ----
+    if [ -f "$db_path" ]; then
+        backup_file "$db_path"
+    fi
+
+    # ---- Удаление старых файлов ----
+    # ВАЖНО: при обновлении (need_fresh=0) НЕ удаляем /etc/x-ui — там лежит x-ui.db со всеми клиентами!
+    if [ "$need_fresh" -eq 1 ]; then
+        log_info "Первичная установка: очистка старых файлов..."
+        rm -rf /usr/local/x-ui /etc/x-ui /etc/systemd/system/x-ui.service /usr/bin/x-ui
+    else
+        log_info "Обновление: удаление только бинарников (/etc/x-ui сохранён)..."
+        rm -rf /usr/local/x-ui /etc/systemd/system/x-ui.service /usr/bin/x-ui
+    fi
     mkdir -p /etc/x-ui
 
     # ---- Download ----
@@ -84,13 +109,22 @@ SERVICEEOF
     systemctl daemon-reload
     systemctl enable x-ui >/dev/null 2>&1
 
-    # ---- Configure credentials ----
-    log_info "Настройка учётных данных панели..."
-    cd /usr/local/x-ui/
-    ./x-ui setting -username "$PANEL_USER" -password "$PANEL_PASS" -port "$PANEL_PORT" -webBasePath "/$PANEL_PATH" || true
+    # ---- Настройка учётных данных: ТОЛЬКО при первичной установке ----
+    # На повторных запусках НЕ вызываем `x-ui setting`, чтобы:
+    #   1) не выставлять пароль в cmdline (виден через ps другим пользователям);
+    #   2) не перезаписывать уже заданные учётные данные в БД.
+    if [ "$need_fresh" -eq 1 ]; then
+        log_info "Первичная настройка учётных данных панели..."
+        cd /usr/local/x-ui/
+        ./x-ui setting -username "$PANEL_USER" -password "$PANEL_PASS" -port "$PANEL_PORT" -webBasePath "/$PANEL_PATH" || true
+        cd - >/dev/null
+    else
+        log_info "Учётные данные сохранены из предыдущей установки (не перезаписываются)"
+    fi
 
-    if [ -f "x-ui.db" ] && [ ! -f "/etc/x-ui/x-ui.db" ]; then
-        mv x-ui.db /etc/x-ui/x-ui.db
+    # Перенос свежесозданной локальной БД в постоянное место (только если постоянной ещё нет)
+    if [ -f "/usr/local/x-ui/x-ui.db" ] && [ ! -f "/etc/x-ui/x-ui.db" ]; then
+        mv /usr/local/x-ui/x-ui.db /etc/x-ui/x-ui.db
     fi
 
     if [ ! -f "/etc/x-ui/x-ui.db" ]; then

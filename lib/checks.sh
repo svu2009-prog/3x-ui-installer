@@ -71,3 +71,11 @@ inbound_exists_by_tag() {
     result=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM inbounds WHERE tag='${tag}';" 2>/dev/null)
     [ "$result" -gt 0 ] 2>/dev/null
 }
+
+# --- Port availability ---
+# Занят ли TCP-порт каким-либо процессом (ss есть в зависимостях).
+is_port_in_use() {
+    local port="$1"
+    [ -n "$port" ] || return 2
+    ss -tlnH 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}\$"
+}

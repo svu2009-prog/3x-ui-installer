@@ -15,10 +15,20 @@ LIB_DIR="${SCRIPT_DIR}/lib"
 if [ ! -d "$LIB_DIR" ]; then
     echo "[bootstrap] lib/ not found locally — downloading 3x-ui-installer from GitHub..."
     TMP_DIR=$(mktemp -d)
-    curl -sL "https://github.com/svu2009-prog/3x-ui-installer/archive/refs/heads/master.tar.gz" \
-        | tar -xz -C "$TMP_DIR"
+    # pipefail ловит сбой curl (без него tar "успешно" распакует пустоту)
+    set -o pipefail
+    if ! curl -sL "https://github.com/svu2009-prog/3x-ui-installer/archive/refs/heads/master.tar.gz" \
+            | tar -xz -C "$TMP_DIR"; then
+        echo "[bootstrap] Ошибка загрузки репозитория"
+        exit 1
+    fi
+    set +o pipefail
     SCRIPT_DIR="${TMP_DIR}/3x-ui-installer-master"
     LIB_DIR="${SCRIPT_DIR}/lib"
+    if [ ! -d "$LIB_DIR" ]; then
+        echo "[bootstrap] Архив распакован, но lib/ не найден"
+        exit 1
+    fi
     cd "$SCRIPT_DIR"
 fi
 
@@ -34,14 +44,15 @@ done
 prompt_for_config() {
     log_section "Ввод данных"
 
-    prompt_with_default "Введите доменное имя (например, example.com)" "" DOMAIN
-    prompt_with_default "Введите Email для Let's Encrypt" "" EMAIL
-    prompt_with_default "Введите External Proxy Address (IP или домен)" "" EXT_PROXY
+    prompt_with_default "Введите доменное имя (например, example.com)" "" DOMAIN is_valid_domain
+    prompt_with_default "Введите Email для Let's Encrypt" "" EMAIL is_valid_email
+    prompt_with_default "Введите External Proxy Address (IP или домен)" "" EXT_PROXY is_valid_host_or_ip
 
     # Generate random values only if not already set from config
+    # Порты генерируем с проверкой уникальности друг относительно друга
     [ -z "${PANEL_PORT:-}" ]        && PANEL_PORT=$(generate_random_port)
-    [ -z "${TROJAN_PORT:-}" ]       && TROJAN_PORT=$(generate_random_port)
-    [ -z "${TROJAN_TLS_PORT:-}" ]   && TROJAN_TLS_PORT=$(generate_random_port)
+    [ -z "${TROJAN_PORT:-}" ]       && TROJAN_PORT=$(generate_random_port "$PANEL_PORT")
+    [ -z "${TROJAN_TLS_PORT:-}" ]   && TROJAN_TLS_PORT=$(generate_random_port "$PANEL_PORT" "$TROJAN_PORT")
     [ -z "${PANEL_PATH:-}" ]        && PANEL_PATH=$(generate_random_string 15)
     [ -z "${PANEL_USER:-}" ]        && PANEL_USER="admin$(generate_random_string 4 0-9)"
     [ -z "${PANEL_PASS:-}" ]        && PANEL_PASS=$(generate_random_string 16)
@@ -57,7 +68,9 @@ prompt_for_config() {
 install_dependencies() {
     log_section "Зависимости системы"
 
-    local packages=(curl wget socat nginx certbot python3-certbot-nginx sqlite3 jq ufw openssl unzip tar)
+    # dnsutils — для dig (DNS-проверка в verify_setup)
+    # iproute2 — для ss (проверка слушающих портов)
+    local packages=(curl wget socat nginx certbot python3-certbot-nginx sqlite3 jq ufw openssl unzip tar dnsutils iproute2)
     local to_install=()
 
     for pkg in "${packages[@]}"; do
@@ -212,6 +225,7 @@ show_summary() {
         echo "Trojan Reality: ${trojan_url}"
         echo "Trojan TLS: ${trojan_tls_url}"
     } > "$CRED_FILE"
+    chmod 600 "$CRED_FILE" 2>/dev/null || true
 
     # Console output
     echo ""
