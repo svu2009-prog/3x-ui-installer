@@ -115,6 +115,8 @@ start_services() {
     x-ui restart >/dev/null 2>&1 || true
     sleep 2
 
+    systemctl restart nginx
+
     log_success "Сервисы запущены"
 }
 
