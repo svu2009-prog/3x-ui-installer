@@ -115,6 +115,7 @@ start_services() {
     x-ui restart >/dev/null 2>&1 || true
     sleep 2
 
+    _remove_nginx_443
     systemctl restart nginx || log_warn "Nginx не удалось перезапустить, проверьте: systemctl status nginx"
 
     log_success "Сервисы запущены"

@@ -94,6 +94,7 @@ STUBEOF
     log_info "Финальная конфигурация Nginx..."
 
     _write_nginx "final" "$nginx_config"
+    _remove_nginx_443
 
     nginx -t || {
         log_error "Финальная конфигурация Nginx невалидна"
@@ -101,6 +102,28 @@ STUBEOF
     }
     systemctl restart nginx
     log_success "Nginx и SSL настроены"
+}
+
+# --------------------------------------------------
+# Remove any nginx config files that try to listen on 443
+# (xray handles port 443, nginx should only serve 80 + 8080)
+# --------------------------------------------------
+_remove_nginx_443() {
+    for d in /etc/nginx/sites-enabled /etc/nginx/conf.d; do
+        [ -d "$d" ] || continue
+        for f in "$d"/*; do
+            [ -f "$f" ] || [ -L "$f" ] || continue
+            if grep -Eq 'listen.*\b443\b' "$f" 2>/dev/null; then
+                if [ "$(basename "$f")" = "default" ]; then
+                    sed -i '/listen.*\b443\b/d' "$f"
+                    log_info "Удалена директива listen 443 из: $f"
+                else
+                    log_info "Удаление конфига (listen 443): $f"
+                    rm -f "$f"
+                fi
+            fi
+        done
+    done
 }
 
 # Helper: write nginx config based on mode
