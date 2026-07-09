@@ -127,6 +127,12 @@ SERVICEEOF
         mv /usr/local/x-ui/x-ui.db /etc/x-ui/x-ui.db
     fi
 
+    # Симлинк: /usr/local/x-ui/x-ui.db → /etc/x-ui/x-ui.db
+    # (x-ui ищет БД в рабочей директории /usr/local/x-ui/, но мы храним её в /etc/x-ui/)
+    if [ -f "/etc/x-ui/x-ui.db" ]; then
+        ln -sf /etc/x-ui/x-ui.db /usr/local/x-ui/x-ui.db
+    fi
+
     if [ ! -f "/etc/x-ui/x-ui.db" ]; then
         log_error "База данных /etc/x-ui/x-ui.db не создана!"
         exit 1

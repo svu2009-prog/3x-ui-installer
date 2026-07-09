@@ -98,6 +98,11 @@ install_dependencies() {
 start_services() {
     log_section "Запуск сервисов"
 
+    # Убеждаемся, что симлинк БД существует (x-ui ищет DB в /usr/local/x-ui/)
+    if [ -f "/etc/x-ui/x-ui.db" ] && [ ! -L "/usr/local/x-ui/x-ui.db" ]; then
+        ln -sf /etc/x-ui/x-ui.db /usr/local/x-ui/x-ui.db
+    fi
+
     systemctl stop nginx 2>/dev/null || true
     systemctl start x-ui
 
