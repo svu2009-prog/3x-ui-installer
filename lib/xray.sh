@@ -76,8 +76,8 @@ generate_xray_keys() {
         exit 1
     fi
 
-    # UUID — нужен для VLESS TCP TLS (inbound 1)
-    if is_inbound_selected 1; then
+    # UUID — нужен для VLESS TCP TLS (inbound 1) и VLESS TCP Reality (inbound 2)
+    if is_inbound_selected 1 || is_inbound_selected 2; then
         if [ -z "${UUID:-}" ]; then
             UUID=$("$xray_bin" uuid)
             log_debug "UUID сгенерирован"
