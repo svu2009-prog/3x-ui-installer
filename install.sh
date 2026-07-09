@@ -46,21 +46,23 @@ prompt_for_config() {
 
     prompt_with_default "Введите доменное имя (например, example.com)" "" DOMAIN is_valid_domain
     prompt_with_default "Введите Email для Let's Encrypt" "" EMAIL is_valid_email
-    prompt_with_default "Введите External Proxy Address (IP или домен)" "" EXT_PROXY is_valid_host_or_ip
 
     # Generate random values only if not already set from config
-    # Порты генерируем с проверкой уникальности друг относительно друга
-    [ -z "${PANEL_PORT:-}" ]        && PANEL_PORT=$(generate_random_port)
-    [ -z "${TROJAN_PORT:-}" ]       && TROJAN_PORT=$(generate_random_port "$PANEL_PORT")
-    [ -z "${TROJAN_TLS_PORT:-}" ]   && TROJAN_TLS_PORT=$(generate_random_port "$PANEL_PORT" "$TROJAN_PORT")
-    [ -z "${PANEL_PATH:-}" ]        && PANEL_PATH=$(generate_random_string 15)
-    [ -z "${PANEL_USER:-}" ]        && PANEL_USER="admin$(generate_random_string 4 0-9)"
-    [ -z "${PANEL_PASS:-}" ]        && PANEL_PASS=$(generate_random_string 16)
-    [ -z "${SUB_ID_VLESS:-}" ]      && SUB_ID_VLESS=$(generate_random_string 16)
-    [ -z "${SUB_ID_TROJAN:-}" ]     && SUB_ID_TROJAN=$(generate_random_string 16)
-    [ -z "${SUB_ID_TROJAN_TLS:-}" ] && SUB_ID_TROJAN_TLS=$(generate_random_string 16)
-    [ -z "${TIMESTAMP:-}" ]         && TIMESTAMP=$(date +%s%3N)
-    [ -z "${CRED_FILE:-}" ]         && CRED_FILE="/root/x-ui-setup-credentials.txt"
+    [ -z "${PANEL_PORT:-}" ]             && PANEL_PORT=$(generate_random_port)
+    [ -z "${TROJAN_PORT:-}" ]            && TROJAN_PORT=$(generate_random_port "$PANEL_PORT")
+    [ -z "${TROJAN_TLS_PORT:-}" ]        && TROJAN_TLS_PORT=$(generate_random_port "$PANEL_PORT" "$TROJAN_PORT")
+    [ -z "${VLESS_REALITY_PORT:-}" ]     && VLESS_REALITY_PORT=$(generate_random_port "$PANEL_PORT" "$TROJAN_PORT" "$TROJAN_TLS_PORT")
+    [ -z "${HYSTERIA_PORT:-}" ]          && HYSTERIA_PORT=$(generate_random_port "$PANEL_PORT" "$TROJAN_PORT" "$TROJAN_TLS_PORT" "$VLESS_REALITY_PORT")
+    [ -z "${PANEL_PATH:-}" ]             && PANEL_PATH=$(generate_random_string 15)
+    [ -z "${PANEL_USER:-}" ]             && PANEL_USER="admin$(generate_random_string 4 0-9)"
+    [ -z "${PANEL_PASS:-}" ]             && PANEL_PASS=$(generate_random_string 16)
+    [ -z "${SUB_ID_VLESS:-}" ]           && SUB_ID_VLESS=$(generate_random_string 16)
+    [ -z "${SUB_ID_VLESS_REALITY:-}" ]   && SUB_ID_VLESS_REALITY=$(generate_random_string 16)
+    [ -z "${SUB_ID_TROJAN:-}" ]          && SUB_ID_TROJAN=$(generate_random_string 16)
+    [ -z "${SUB_ID_TROJAN_TLS:-}" ]      && SUB_ID_TROJAN_TLS=$(generate_random_string 16)
+    [ -z "${SUB_ID_HYSTERIA:-}" ]        && SUB_ID_HYSTERIA=$(generate_random_string 16)
+    [ -z "${TIMESTAMP:-}" ]              && TIMESTAMP=$(date +%s%3N)
+    [ -z "${CRED_FILE:-}" ]              && CRED_FILE="/root/x-ui-setup-credentials.txt"
 
     log_success "Конфигурация загружена"
 }
@@ -196,34 +198,62 @@ verify_setup() {
 show_summary() {
     log_section "Итог установки"
 
-    local vless_url="vless://${UUID}@${DOMAIN}:443?security=tls&encryption=none&type=tcp&flow=xtls-rprx-vision&sni=${DOMAIN}&fp=chrome#VLESS-TLS-Fallback"
-    local trojan_url="trojan://${TROJAN_PASS}@${EXT_PROXY}:${TROJAN_PORT}?security=reality&serviceName=grpc&type=grpc&pbk=${PUBLIC_KEY}&sni=www.microsoft.com&sid=${SHORT_ID}&fp=chrome#Trojan-Reality"
-    local trojan_tls_url="trojan://${TROJAN_TLS_PASS}@${DOMAIN}:${TROJAN_TLS_PORT}?security=tls&type=grpc&sni=${DOMAIN}&fp=chrome#Trojan-gRPC-TLS"
+    # Генерируем URL только для выбранных inbound'ов
+    local vless_url=""
+    local vless_reality_url=""
+    local trojan_url=""
+    local trojan_tls_url=""
+    local hysteria_url=""
+
+    if is_inbound_selected 1; then
+        vless_url="vless://${UUID}@${DOMAIN}:443?security=tls&encryption=none&type=tcp&flow=xtls-rprx-vision&sni=${DOMAIN}&fp=chrome#VLESS-TLS-Fallback"
+    fi
+    if is_inbound_selected 2; then
+        vless_reality_url="vless://${UUID}@${DOMAIN}:${VLESS_REALITY_PORT}?security=reality&encryption=none&type=tcp&flow=xtls-rprx-vision&pbk=${PUBLIC_KEY}&sni=www.microsoft.com&sid=${SHORT_ID}&fp=chrome#VLESS-Reality"
+    fi
+    if is_inbound_selected 3; then
+        trojan_tls_url="trojan://${TROJAN_TLS_PASS}@${DOMAIN}:${TROJAN_TLS_PORT}?security=tls&type=grpc&sni=${DOMAIN}&fp=chrome#Trojan-gRPC-TLS"
+    fi
+    if is_inbound_selected 4; then
+        trojan_url="trojan://${TROJAN_PASS}@${DOMAIN}:${TROJAN_PORT}?security=reality&type=grpc&pbk=${PUBLIC_KEY}&sni=www.microsoft.com&sid=${SHORT_ID}&fp=chrome#Trojan-Reality"
+    fi
+    if is_inbound_selected 5; then
+        hysteria_url="hysteria2://${HYSTERIA_AUTH}@${DOMAIN}:${HYSTERIA_PORT}?security=tls&sni=${DOMAIN}&insecure=0&obfs=salamander&obfs-password=${HYSTERIA_PASS}&alpn=h3#Hysteria-UDP"
+    fi
 
     # Save credentials file
     {
         echo "=== Данные 3X-UI ==="
         echo "Домен: ${DOMAIN}"
-        echo "External Proxy: ${EXT_PROXY}"
         echo "Порт панели: ${PANEL_PORT}"
         echo "Путь панели: /${PANEL_PATH}"
         echo "Логин панели: ${PANEL_USER}"
         echo "Пароль панели: ${PANEL_PASS}"
-        echo "Порт Trojan (Reality): ${TROJAN_PORT}"
-        echo "Порт Trojan (TLS): ${TROJAN_TLS_PORT}"
+        echo ""
+        echo "=== Выбранные входящие ==="
+        for s in "${SELECTED_INBOUNDS[@]}"; do
+            echo "  ${INBOUND_NAMES[$((s-1))]}"
+        done
         echo ""
         echo "=== Ключи подключений ==="
-        echo "VLESS UUID: ${UUID}"
-        echo "Trojan Pass (Reality): ${TROJAN_PASS}"
-        echo "Trojan Pass (TLS): ${TROJAN_TLS_PASS}"
-        echo "Reality Private Key: ${PRIVATE_KEY}"
-        echo "Reality Public Key: ${PUBLIC_KEY}"
-        echo "Reality ShortID: ${SHORT_ID}"
+        [ -n "$vless_url" ]         && echo "VLESS UUID: ${UUID}"
+        [ -n "$vless_reality_url" ] && echo "VLESS UUID: ${UUID}"
+        [ -n "$trojan_url" ]        && echo "Trojan Pass (Reality): ${TROJAN_PASS}"
+        [ -n "$trojan_tls_url" ]    && echo "Trojan Pass (TLS): ${TROJAN_TLS_PASS}"
+        [ -n "$hysteria_url" ]      && echo "Hysteria Auth: ${HYSTERIA_AUTH}"
+        [ -n "$hysteria_url" ]      && echo "Hysteria Salamander Pass: ${HYSTERIA_PASS}"
+        if is_inbound_selected 2 || is_inbound_selected 4; then
+            echo "Reality Private Key: ${PRIVATE_KEY}"
+            echo "Reality Public Key: ${PUBLIC_KEY}"
+            echo "Reality ShortID: ${SHORT_ID}"
+        fi
         echo ""
         echo "=== Ссылки для импорта ==="
-        echo "VLESS: ${vless_url}"
-        echo "Trojan Reality: ${trojan_url}"
-        echo "Trojan TLS: ${trojan_tls_url}"
+        [ -n "$vless_url" ]         && echo "VLESS TLS: ${vless_url}"
+        [ -n "$vless_reality_url" ] && echo "VLESS Reality: ${vless_reality_url}"
+        [ -n "$trojan_url" ]        && echo "Trojan Reality: ${trojan_url}"
+        [ -n "$trojan_tls_url" ]    && echo "Trojan TLS: ${trojan_tls_url}"
+        [ -n "$hysteria_url" ]      && echo "Hysteria: ${hysteria_url}"
     } > "$CRED_FILE"
     chmod 600 "$CRED_FILE" 2>/dev/null || true
 
@@ -239,15 +269,33 @@ show_summary() {
     echo -e "  Пароль:   ${GREEN}${PANEL_PASS}${NC}"
     echo ""
     echo -e "${CYAN}--- Ссылки для клиентов ---${NC}"
-    echo -e "${YELLOW}VLESS (TLS + Nginx Fallback) [443]:${NC}"
-    echo -e "  ${GREEN}${vless_url}${NC}"
-    echo ""
-    echo -e "${YELLOW}Trojan (gRPC + Reality) [${TROJAN_PORT}]:${NC}"
-    echo -e "  ${GREEN}${trojan_url}${NC}"
-    echo ""
-    echo -e "${YELLOW}Trojan (gRPC + TLS) [${TROJAN_TLS_PORT}]:${NC}"
-    echo -e "  ${GREEN}${trojan_tls_url}${NC}"
-    echo ""
+
+    if [ -n "$vless_url" ]; then
+        echo -e "${YELLOW}VLESS (TLS + Nginx Fallback) [443]:${NC}"
+        echo -e "  ${GREEN}${vless_url}${NC}"
+        echo ""
+    fi
+    if [ -n "$vless_reality_url" ]; then
+        echo -e "${YELLOW}VLESS (TCP + Reality) [${VLESS_REALITY_PORT}]:${NC}"
+        echo -e "  ${GREEN}${vless_reality_url}${NC}"
+        echo ""
+    fi
+    if [ -n "$trojan_url" ]; then
+        echo -e "${YELLOW}Trojan (gRPC + Reality) [${TROJAN_PORT}]:${NC}"
+        echo -e "  ${GREEN}${trojan_url}${NC}"
+        echo ""
+    fi
+    if [ -n "$trojan_tls_url" ]; then
+        echo -e "${YELLOW}Trojan (gRPC + TLS) [${TROJAN_TLS_PORT}]:${NC}"
+        echo -e "  ${GREEN}${trojan_tls_url}${NC}"
+        echo ""
+    fi
+    if [ -n "$hysteria_url" ]; then
+        echo -e "${YELLOW}Hysteria (UDP + TLS) [${HYSTERIA_PORT}]:${NC}"
+        echo -e "  ${GREEN}${hysteria_url}${NC}"
+        echo ""
+    fi
+
     echo -e "${GRAY}Лог установки: ${LOG_FILE}${NC}"
     echo -e "${GRAY}Учётные данные: ${CRED_FILE}${NC}"
     echo -e "${GRAY}Конфигурация: ${CONFIG_FILE}${NC}"
@@ -271,6 +319,7 @@ main() {
     # Load saved config (if exists), then prompt for missing fields
     load_config || true
     prompt_for_config
+    select_inbounds
 
     # Execute steps
     install_dependencies
