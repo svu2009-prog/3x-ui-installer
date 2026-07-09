@@ -67,11 +67,11 @@ STUBEOF
         local expiry
         expiry=$(get_certificate_expiry "$DOMAIN")
         log_info "Срок действия: ${expiry:-неизвестно}"
-        certbot renew --nginx --non-interactive --quiet || true
+        certbot renew --webroot -w /var/www/html --non-interactive --quiet || true
         log_success "Сертификат проверен"
     else
         log_info "Выпуск SSL сертификата для ${DOMAIN}..."
-        certbot --nginx -d "$DOMAIN" -m "$EMAIL" --agree-tos --non-interactive --redirect || {
+        certbot certonly --webroot -w /var/www/html -d "$DOMAIN" -m "$EMAIL" --agree-tos --non-interactive || {
             log_error "Ошибка выпуска SSL сертификата для ${DOMAIN}"
             exit 1
         }
@@ -84,25 +84,21 @@ STUBEOF
     cp -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" /etc/x-ui/ssl/fullchain.pem
     cp -f "/etc/letsencrypt/live/${DOMAIN}/privkey.pem"   /etc/x-ui/ssl/privkey.pem
 
-    # ---- Step 4: final Nginx config (redirect 80→443, panel on 8080) ----
+    # ---- Step 4: restore backup (certbot did NOT touch nginx config) ----
+    if [ -f "$nginx_bak" ]; then
+        cp -f "$nginx_bak" "$nginx_config"
+        rm -f "$nginx_bak"
+    fi
+
+    # ---- Step 5: final Nginx config (redirect 80→443, panel on 8080) ----
     log_info "Финальная конфигурация Nginx..."
 
     _write_nginx "final" "$nginx_config"
 
-    # Remove any certbot-created site configs that may listen on 443
-    for f in /etc/nginx/sites-enabled/*; do
-        [ -f "$f" ] || continue
-        [ "$(basename "$f")" = "default" ] && continue
-        log_info "Удаление конфигурации: $(basename "$f")"
-        rm -f "$f"
-    done
-
     nginx -t || {
-        [ -f "$nginx_bak" ] && cp -f "$nginx_bak" "$nginx_config"
         log_error "Финальная конфигурация Nginx невалидна"
         exit 1
     }
-    rm -f "$nginx_bak"
     systemctl restart nginx
     log_success "Nginx и SSL настроены"
 }

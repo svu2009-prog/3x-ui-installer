@@ -115,14 +115,7 @@ start_services() {
     x-ui restart >/dev/null 2>&1 || true
     sleep 2
 
-    # Перезапуск nginx (порт 443 занят xray — удаляем любые конфликтующие SSL-конфиги)
-    local nginx_conflict=false
-    for f in /etc/nginx/sites-enabled/*; do
-        [ -f "$f" ] && [ "$(basename "$f")" != "default" ] && rm -f "$f" && nginx_conflict=true
-    done
-    [ "$nginx_conflict" = true ] && log_info "Удалены лишние конфиги sites-enabled"
-
-    systemctl restart nginx || log_warn "Nginx не удалось перезапустить (возможно, порт 443 занят xray)"
+    systemctl restart nginx || log_warn "Nginx не удалось перезапустить, проверьте: systemctl status nginx"
 
     log_success "Сервисы запущены"
 }
