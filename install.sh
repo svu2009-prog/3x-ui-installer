@@ -98,8 +98,8 @@ install_dependencies() {
 start_services() {
     log_section "Запуск сервисов"
 
+    systemctl stop nginx 2>/dev/null || true
     systemctl start x-ui
-    systemctl restart nginx
 
     sleep 3
 
