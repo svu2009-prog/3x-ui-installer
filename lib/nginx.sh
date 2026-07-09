@@ -89,6 +89,14 @@ STUBEOF
 
     _write_nginx "final" "$nginx_config"
 
+    # Remove any certbot-created site configs that may listen on 443
+    for f in /etc/nginx/sites-enabled/*; do
+        [ -f "$f" ] || continue
+        [ "$(basename "$f")" = "default" ] && continue
+        log_info "Удаление конфигурации: $(basename "$f")"
+        rm -f "$f"
+    done
+
     nginx -t || {
         [ -f "$nginx_bak" ] && cp -f "$nginx_bak" "$nginx_config"
         log_error "Финальная конфигурация Nginx невалидна"
