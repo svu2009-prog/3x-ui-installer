@@ -67,11 +67,11 @@ STUBEOF
         local expiry
         expiry=$(get_certificate_expiry "$DOMAIN")
         log_info "Срок действия: ${expiry:-неизвестно}"
-        certbot renew --webroot -w /var/www/html --non-interactive --quiet || true
+        certbot renew --nginx --non-interactive --quiet || true
         log_success "Сертификат проверен"
     else
         log_info "Выпуск SSL сертификата для ${DOMAIN}..."
-        certbot certonly --webroot -w /var/www/html -d "$DOMAIN" -m "$EMAIL" --agree-tos --non-interactive || {
+        certbot --nginx -d "$DOMAIN" -m "$EMAIL" --agree-tos --non-interactive --redirect || {
             log_error "Ошибка выпуска SSL сертификата для ${DOMAIN}"
             exit 1
         }
@@ -84,46 +84,19 @@ STUBEOF
     cp -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" /etc/x-ui/ssl/fullchain.pem
     cp -f "/etc/letsencrypt/live/${DOMAIN}/privkey.pem"   /etc/x-ui/ssl/privkey.pem
 
-    # ---- Step 4: restore backup (certbot did NOT touch nginx config) ----
-    if [ -f "$nginx_bak" ]; then
-        cp -f "$nginx_bak" "$nginx_config"
-        rm -f "$nginx_bak"
-    fi
-
-    # ---- Step 5: final Nginx config (redirect 80→443, panel on 8080) ----
+    # ---- Step 4: final Nginx config (redirect 80→443, panel on 8080) ----
     log_info "Финальная конфигурация Nginx..."
 
     _write_nginx "final" "$nginx_config"
-    _remove_nginx_443
 
     nginx -t || {
+        [ -f "$nginx_bak" ] && cp -f "$nginx_bak" "$nginx_config"
         log_error "Финальная конфигурация Nginx невалидна"
         exit 1
     }
+    rm -f "$nginx_bak"
     systemctl restart nginx
     log_success "Nginx и SSL настроены"
-}
-
-# --------------------------------------------------
-# Remove any nginx config files that try to listen on 443
-# (xray handles port 443, nginx should only serve 80 + 8080)
-# --------------------------------------------------
-_remove_nginx_443() {
-    for d in /etc/nginx/sites-enabled /etc/nginx/conf.d; do
-        [ -d "$d" ] || continue
-        for f in "$d"/*; do
-            [ -f "$f" ] || [ -L "$f" ] || continue
-            if grep -Eq 'listen.*\b443\b' "$f" 2>/dev/null; then
-                if [ "$(basename "$f")" = "default" ]; then
-                    sed -i '/listen.*\b443\b/d' "$f"
-                    log_info "Удалена директива listen 443 из: $f"
-                else
-                    log_info "Удаление конфига (listen 443): $f"
-                    rm -f "$f"
-                fi
-            fi
-        done
-    done
 }
 
 # Helper: write nginx config based on mode

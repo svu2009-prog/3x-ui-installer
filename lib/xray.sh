@@ -63,7 +63,6 @@ _update_inbound_cert() {
 
 # --------------------------------------------------
 # Generate Xray keys (idempotent — skip if already set)
-# Генерирует только ключи для выбранных inbound'ов
 # --------------------------------------------------
 generate_xray_keys() {
     log_section "Ключи Xray"
@@ -76,55 +75,31 @@ generate_xray_keys() {
         exit 1
     fi
 
-    # UUID — нужен для VLESS TCP TLS (inbound 1) и VLESS TCP Reality (inbound 2)
-    if is_inbound_selected 1 || is_inbound_selected 2; then
-        if [ -z "${UUID:-}" ]; then
-            UUID=$("$xray_bin" uuid)
-            log_debug "UUID сгенерирован"
-        else
-            log_debug "UUID уже существует, пропускаю"
-        fi
+    if [ -z "${UUID:-}" ]; then
+        UUID=$("$xray_bin" uuid)
+        log_debug "UUID сгенерирован"
+    else
+        log_debug "UUID уже существует, пропускаю"
     fi
 
-    # Reality ключи — нужны для VLESS TCP Reality (2) и Trojan gRPC Reality (4)
-    if is_inbound_selected 2 || is_inbound_selected 4; then
-        if [ -z "${PRIVATE_KEY:-}" ] || [ -z "${PUBLIC_KEY:-}" ]; then
-            local reality_keys
-            reality_keys=$("$xray_bin" x25519)
-            PRIVATE_KEY=$(echo "$reality_keys" | awk -F': ' '/Private/{print $2}')
-            PUBLIC_KEY=$(echo "$reality_keys" | awk -F': ' '/Public/{print $2}')
-            log_debug "Reality ключи сгенерированы"
-        else
-            log_debug "Reality ключи уже существуют, пропускаю"
-        fi
-
-        if [ -z "${SHORT_ID:-}" ]; then
-            SHORT_ID=$(openssl rand -hex 8)
-        fi
+    if [ -z "${PRIVATE_KEY:-}" ] || [ -z "${PUBLIC_KEY:-}" ]; then
+        local reality_keys
+        reality_keys=$("$xray_bin" x25519)
+        PRIVATE_KEY=$(echo "$reality_keys" | awk -F': ' '/Private/{print $2}')
+        PUBLIC_KEY=$(echo "$reality_keys" | awk -F': ' '/Public/{print $2}')
+        log_debug "Reality ключи сгенерированы"
+    else
+        log_debug "Reality ключи уже существуют, пропускаю"
     fi
 
-    # Trojan пароли — нужны для Trojan TLS (3) и Trojan Reality (4)
-    if is_inbound_selected 3; then
-        if [ -z "${TROJAN_TLS_PASS:-}" ]; then
-            TROJAN_TLS_PASS=$(generate_random_string 16)
-        fi
+    if [ -z "${SHORT_ID:-}" ]; then
+        SHORT_ID=$(openssl rand -hex 8)
     fi
-    if is_inbound_selected 4; then
-        if [ -z "${TROJAN_PASS:-}" ]; then
-            TROJAN_PASS=$(generate_random_string 16)
-        fi
+    if [ -z "${TROJAN_PASS:-}" ]; then
+        TROJAN_PASS=$(generate_random_string 16)
     fi
-
-    # Hysteria — auth и salamander пароль (inbound 5)
-    if is_inbound_selected 5; then
-        if [ -z "${HYSTERIA_AUTH:-}" ]; then
-            HYSTERIA_AUTH=$(generate_random_string 16)
-            log_debug "Hysteria auth сгенерирован"
-        fi
-        if [ -z "${HYSTERIA_PASS:-}" ]; then
-            HYSTERIA_PASS=$(generate_random_string 16)
-            log_debug "Hysteria salamander пароль сгенерирован"
-        fi
+    if [ -z "${TROJAN_TLS_PASS:-}" ]; then
+        TROJAN_TLS_PASS=$(generate_random_string 16)
     fi
 
     log_success "Ключи Xray готовы"
@@ -132,7 +107,6 @@ generate_xray_keys() {
 
 # --------------------------------------------------
 # Configure inbounds in SQLite (idempotent upsert)
-# Устанавливает только выбранные входящие
 # --------------------------------------------------
 configure_inbounds() {
     log_section "Inbounds (SQLite)"
@@ -157,118 +131,67 @@ configure_inbounds() {
     log_info "SSL сертификаты панели применены"
 
     # ---- 1. VLESS TCP TLS (443) ----
-    if is_inbound_selected 1; then
-        log_info "Формирование inbound VLESS TCP TLS..."
-        local vless_settings
-        vless_settings=$(jq -nc \
-            --arg uuid "$UUID" \
-            --arg sub "$SUB_ID_VLESS" \
-            --argjson ts "$TIMESTAMP" \
-            '{clients:[{id:$uuid,flow:"xtls-rprx-vision",email:"vless_tls@3x-ui",limitIp:0,totalGB:0,expiryTime:0,enable:true,tgId:0,subId:$sub,comment:"",reset:0,created_at:$ts,updated_at:$ts}],decryption:"none",encryption:"none",fallbacks:[{alpn:"",dest:"127.0.0.1:8080",name:"",path:"",xver:0}],testseed:[900,500,900,256]}')
+    log_info "Формирование inbound VLESS..."
+    local vless_settings
+    vless_settings=$(jq -nc \
+        --arg uuid "$UUID" \
+        --arg sub "$SUB_ID_VLESS" \
+        --argjson ts "$TIMESTAMP" \
+        '{clients:[{id:$uuid,flow:"xtls-rprx-vision",email:"vless_tls@3x-ui",limitIp:0,totalGB:0,expiryTime:0,enable:true,tgId:0,subId:$sub,comment:"",reset:0,created_at:$ts,updated_at:$ts}],decryption:"none",encryption:"none",fallbacks:[{alpn:"",dest:"127.0.0.1:8080",name:"",path:"",xver:0}],testseed:[900,500,900,256]}')
 
-        local vless_stream
-        vless_stream=$(jq -nc \
-            --arg domain "$DOMAIN" \
-            '{network:"tcp",tcpSettings:{acceptProxyProtocol:false,header:{type:"none"}},security:"tls",tlsSettings:{serverName:$domain,minVersion:"1.2",maxVersion:"1.3",cipherSuites:"",rejectUnknownSni:false,disableSystemRoot:false,enableSessionResumption:false,certificates:[{certificateFile:"/etc/x-ui/ssl/fullchain.pem",keyFile:"/etc/x-ui/ssl/privkey.pem",ocspStapling:0,oneTimeLoading:false,usage:"encipherment",buildChain:false,useFile:true}],alpn:["http/1.1"],echServerKeys:"",settings:{fingerprint:"chrome",echConfigList:"",pinnedPeerCertSha256:[],verifyPeerCertByName:""}}}')
+    local vless_stream
+    vless_stream=$(jq -nc \
+        --arg domain "$DOMAIN" \
+        '{network:"tcp",tcpSettings:{acceptProxyProtocol:false,header:{type:"none"}},security:"tls",tlsSettings:{serverName:$domain,minVersion:"1.2",maxVersion:"1.3",cipherSuites:"",rejectUnknownSni:false,disableSystemRoot:false,enableSessionResumption:false,certificates:[{certificateFile:"/etc/x-ui/ssl/fullchain.pem",keyFile:"/etc/x-ui/ssl/privkey.pem",ocspStapling:0,oneTimeLoading:false,usage:"encipherment",buildChain:false,useFile:true}],alpn:["http/1.1"],echServerKeys:"",settings:{fingerprint:"chrome",echConfigList:"",pinnedPeerCertSha256:[],verifyPeerCertByName:""}}}')
 
-        _upsert_inbound "$db_path" "inbound-443" 443 "vless" \
-            "$vless_settings" "$vless_stream" \
-            '{"enabled":true,"destOverride":["http","tls"]}'
+    _upsert_inbound "$db_path" "inbound-443" 443 "vless" \
+        "$vless_settings" "$vless_stream" \
+        '{"enabled":true,"destOverride":["http","tls"]}'
 
-        # Update cert paths if inbound already existed (fix symlink issues)
-        _update_inbound_cert "$db_path" "inbound-443"
-    fi
+    # Update cert paths if inbound already existed (fix symlink issues)
+    _update_inbound_cert "$db_path" "inbound-443"
 
-    # ---- 2. VLESS TCP Reality ----
-    if is_inbound_selected 2; then
-        log_info "Формирование inbound VLESS TCP Reality..."
-        local vless_reality_settings
-        vless_reality_settings=$(jq -nc \
-            --arg uuid "$UUID" \
-            --arg sub "$SUB_ID_VLESS_REALITY" \
-            --argjson ts "$TIMESTAMP" \
-            '{clients:[{id:$uuid,flow:"xtls-rprx-vision",email:"vless_reality@3x-ui",limitIp:0,totalGB:0,expiryTime:0,enable:true,tgId:0,subId:$sub,comment:"",reset:0,created_at:$ts,updated_at:$ts}],decryption:"none",encryption:"none",fallbacks:[],testseed:[900,500,900,256]}')
+    # ---- 2. Trojan gRPC Reality ----
+    local trojan_settings
+    trojan_settings=$(jq -nc \
+        --arg pass "$TROJAN_PASS" \
+        --arg sub "$SUB_ID_TROJAN" \
+        --argjson ts "$TIMESTAMP" \
+        '{clients:[{password:$pass,email:"trojan_reality@3x-ui",limitIp:0,totalGB:0,expiryTime:0,enable:true,tgId:0,subId:$sub,comment:"",reset:0,created_at:$ts,updated_at:$ts}],fallbacks:[]}')
 
-        local vless_reality_stream
-        vless_reality_stream=$(jq -nc \
-            --arg priv "$PRIVATE_KEY" \
-            --arg pub "$PUBLIC_KEY" \
-            --arg sid "$SHORT_ID" \
-            '{network:"tcp",tcpSettings:{acceptProxyProtocol:false,header:{type:"none"}},security:"reality",realitySettings:{show:false,xver:0,target:"www.microsoft.com:443",serverNames:["www.microsoft.com"],privateKey:$priv,minClientVer:"",maxClientVer:"",maxTimediff:0,shortIds:[$sid],mldsa65Seed:"",settings:{publicKey:$pub,fingerprint:"chrome",serverName:"",spiderX:"/",mldsa65Verify:""}}}')
+    local trojan_stream
+    trojan_stream=$(jq -nc \
+        --arg priv "$PRIVATE_KEY" \
+        --arg pub "$PUBLIC_KEY" \
+        --arg sid "$SHORT_ID" \
+        --arg ext "$EXT_PROXY" \
+        --argjson port "$TROJAN_PORT" \
+        '{network:"grpc",grpcSettings:{serviceName:"",authority:"",multiMode:false},security:"reality",realitySettings:{show:false,xver:0,target:"www.microsoft.com:443",serverNames:["www.microsoft.com"],privateKey:$priv,minClientVer:"",maxClientVer:"",maxTimediff:0,shortIds:[$sid],mldsa65Seed:"",settings:{publicKey:$pub,fingerprint:"chrome",serverName:"",spiderX:"/",mldsa65Verify:""}},externalProxy:[{forceTls:"same",dest:$ext,port:$port,remark:""}]}')
 
-        _upsert_inbound "$db_path" "inbound-${VLESS_REALITY_PORT}" "$VLESS_REALITY_PORT" "vless" \
-            "$vless_reality_settings" "$vless_reality_stream" \
-            '{"enabled":true,"destOverride":["http","tls"]}'
-    fi
+    _upsert_inbound "$db_path" "inbound-${TROJAN_PORT}" "$TROJAN_PORT" "trojan" \
+        "$trojan_settings" "$trojan_stream" \
+        '{"enabled":true,"destOverride":["http","tls"]}'
 
     # ---- 3. Trojan gRPC TLS ----
-    if is_inbound_selected 3; then
-        log_info "Формирование inbound Trojan gRPC TLS..."
-        local trojan_tls_settings
-        trojan_tls_settings=$(jq -nc \
-            --arg pass "$TROJAN_TLS_PASS" \
-            --arg sub "$SUB_ID_TROJAN_TLS" \
-            --argjson ts "$TIMESTAMP" \
-            '{clients:[{password:$pass,email:"trojan_tls@3x-ui",limitIp:0,totalGB:0,expiryTime:0,enable:true,tgId:0,subId:$sub,comment:"",reset:0,created_at:$ts,updated_at:$ts}],fallbacks:[]}')
+    log_info "Формирование inbound Trojan TLS..."
+    local trojan_tls_settings
+    trojan_tls_settings=$(jq -nc \
+        --arg pass "$TROJAN_TLS_PASS" \
+        --arg sub "$SUB_ID_TROJAN_TLS" \
+        --argjson ts "$TIMESTAMP" \
+        '{clients:[{password:$pass,email:"trojan_tls@3x-ui",limitIp:0,totalGB:0,expiryTime:0,enable:true,tgId:0,subId:$sub,comment:"",reset:0,created_at:$ts,updated_at:$ts}],fallbacks:[]}')
 
-        local trojan_tls_stream
-        trojan_tls_stream=$(jq -nc \
-            --arg domain "$DOMAIN" \
-            '{network:"grpc",grpcSettings:{serviceName:"",authority:"",multiMode:false},security:"tls",tlsSettings:{serverName:$domain,minVersion:"1.2",maxVersion:"1.3",cipherSuites:"",rejectUnknownSni:false,disableSystemRoot:false,enableSessionResumption:false,certificates:[{certificateFile:"/etc/x-ui/ssl/fullchain.pem",keyFile:"/etc/x-ui/ssl/privkey.pem",ocspStapling:0,oneTimeLoading:false,usage:"encipherment",buildChain:false,useFile:true}],alpn:["http/1.1"],echServerKeys:"",settings:{fingerprint:"chrome",echConfigList:"",pinnedPeerCertSha256:[],verifyPeerCertByName:""}}}')
+    local trojan_tls_stream
+    trojan_tls_stream=$(jq -nc \
+        --arg domain "$DOMAIN" \
+        '{network:"grpc",grpcSettings:{serviceName:"",authority:"",multiMode:false},security:"tls",tlsSettings:{serverName:$domain,minVersion:"1.2",maxVersion:"1.3",cipherSuites:"",rejectUnknownSni:false,disableSystemRoot:false,enableSessionResumption:false,certificates:[{certificateFile:"/etc/x-ui/ssl/fullchain.pem",keyFile:"/etc/x-ui/ssl/privkey.pem",ocspStapling:0,oneTimeLoading:false,usage:"encipherment",buildChain:false,useFile:true}],alpn:["http/1.1"],echServerKeys:"",settings:{fingerprint:"chrome",echConfigList:"",pinnedPeerCertSha256:[],verifyPeerCertByName:""}}}')
 
-        _upsert_inbound "$db_path" "inbound-${TROJAN_TLS_PORT}" "$TROJAN_TLS_PORT" "trojan" \
-            "$trojan_tls_settings" "$trojan_tls_stream" \
-            '{"enabled":true,"destOverride":["http","tls","quic","fakedns"]}'
+    _upsert_inbound "$db_path" "inbound-${TROJAN_TLS_PORT}" "$TROJAN_TLS_PORT" "trojan" \
+        "$trojan_tls_settings" "$trojan_tls_stream" \
+        '{"enabled":true,"destOverride":["http","tls","quic","fakedns"]}'
 
-        # Update cert paths for existing TLS inbounds
-        _update_inbound_cert "$db_path" "inbound-${TROJAN_TLS_PORT}"
-    fi
+    # Update cert paths for existing TLS inbounds
+    _update_inbound_cert "$db_path" "inbound-${TROJAN_TLS_PORT}"
 
-    # ---- 4. Trojan gRPC Reality ----
-    if is_inbound_selected 4; then
-        log_info "Формирование inbound Trojan gRPC Reality..."
-        local trojan_settings
-        trojan_settings=$(jq -nc \
-            --arg pass "$TROJAN_PASS" \
-            --arg sub "$SUB_ID_TROJAN" \
-            --argjson ts "$TIMESTAMP" \
-            '{clients:[{password:$pass,email:"trojan_reality@3x-ui",limitIp:0,totalGB:0,expiryTime:0,enable:true,tgId:0,subId:$sub,comment:"",reset:0,created_at:$ts,updated_at:$ts}],fallbacks:[]}')
-
-        local trojan_stream
-        trojan_stream=$(jq -nc \
-            --arg priv "$PRIVATE_KEY" \
-            --arg pub "$PUBLIC_KEY" \
-            --arg sid "$SHORT_ID" \
-            '{network:"grpc",grpcSettings:{serviceName:"",authority:"",multiMode:false},security:"reality",realitySettings:{show:false,xver:0,target:"www.microsoft.com:443",serverNames:["www.microsoft.com"],privateKey:$priv,minClientVer:"",maxClientVer:"",maxTimediff:0,shortIds:[$sid],mldsa65Seed:"",settings:{publicKey:$pub,fingerprint:"chrome",serverName:"",spiderX:"/",mldsa65Verify:""}}}')
-
-        _upsert_inbound "$db_path" "inbound-${TROJAN_PORT}" "$TROJAN_PORT" "trojan" \
-            "$trojan_settings" "$trojan_stream" \
-            '{"enabled":true,"destOverride":["http","tls"]}'
-    fi
-
-    # ---- 5. Hysteria UDP ----
-    if is_inbound_selected 5; then
-        log_info "Формирование inbound Hysteria UDP..."
-        local hysteria_settings
-        hysteria_settings=$(jq -nc \
-            --arg auth "$HYSTERIA_AUTH" \
-            --arg sub "$SUB_ID_HYSTERIA" \
-            --argjson ts "$TIMESTAMP" \
-            '{clients:[{auth:$auth,email:"hysteria@3x-ui",limitIp:0,totalGB:0,expiryTime:0,enable:true,tgId:0,subId:$sub,comment:"",reset:0,created_at:$ts,updated_at:$ts}],version:2}')
-
-        local hysteria_stream
-        hysteria_stream=$(jq -nc \
-            --arg domain "$DOMAIN" \
-            --arg pass "$HYSTERIA_PASS" \
-            '{network:"hysteria",hysteriaSettings:{version:2,udpIdleTimeout:60,masquerade:{type:"",dir:"",url:"",rewriteHost:false,insecure:false,content:"",headers:{},statusCode:0}},security:"tls",tlsSettings:{serverName:$domain,minVersion:"1.2",maxVersion:"1.3",cipherSuites:"",rejectUnknownSni:false,disableSystemRoot:false,enableSessionResumption:false,certificates:[{certificateFile:"/etc/x-ui/ssl/fullchain.pem",keyFile:"/etc/x-ui/ssl/privkey.pem",ocspStapling:0,oneTimeLoading:false,usage:"encipherment",buildChain:false,useFile:true}],alpn:["h3"],echServerKeys:"",settings:{echConfigList:"",pinnedPeerCertSha256:[],verifyPeerCertByName:""}},finalmask:{udp:[{type:"salamander",settings:{password:$pass}}]}}')
-
-        _upsert_inbound "$db_path" "inbound-${HYSTERIA_PORT}" "$HYSTERIA_PORT" "hysteria" \
-            "$hysteria_settings" "$hysteria_stream" \
-            '{"enabled":false}'
-
-        # Update cert paths for existing Hysteria inbound
-        _update_inbound_cert "$db_path" "inbound-${HYSTERIA_PORT}"
-    fi
-
-    log_success "Inbounds настроены"
+    log_success "Inbounds настроены (VLESS:443, Trojan-reality:${TROJAN_PORT}, Trojan-tls:${TROJAN_TLS_PORT})"
 }

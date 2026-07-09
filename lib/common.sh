@@ -229,86 +229,19 @@ is_valid_email() {
     return 0
 }
 
-# ============================================================
-# INBOUND SELECTION MENU
-# ============================================================
-# Массив названий входящих (индекс 1..5)
-declare -a INBOUND_NAMES=(
-    "VLESS TCP TLS"
-    "VLESS TCP Reality"
-    "Trojan gRPC TLS"
-    "Trojan gRPC Reality"
-    "Hysteria UDP"
-)
-
-# Массив выбранных inbound IDs (1..5)
-declare -a SELECTED_INBOUNDS=()
-
-is_inbound_selected() {
-    local idx="$1"
-    local s
-    for s in "${SELECTED_INBOUNDS[@]}"; do
-        [ "$s" = "$idx" ] && return 0
-    done
-    return 1
-}
-
-select_inbounds() {
-    log_section "Выбор входящих (Inbounds)"
-
-    echo -e "${CYAN}Доступные входящие:${NC}"
-    local i
-    for ((i=0; i<${#INBOUND_NAMES[@]}; i++)); do
-        echo -e "  ${GREEN}$((i+1))${NC}. ${INBOUND_NAMES[$i]}"
-    done
-    echo ""
-    echo -e "${YELLOW}Введите номера через пробел (например: 1 3 5) или 'all' для выбора всех:${NC}"
-    echo -e "${GRAY}Минимум 1 входящее.${NC}"
-    echo ""
-
-    while true; do
-        read -rp "$(echo -e "${CYAN}Ваш выбор:${NC} ")" input
-        input=$(echo "$input" | tr ',' ' ' | xargs)
-
-        SELECTED_INBOUNDS=()
-
-        if [ "$input" = "all" ] || [ "$input" = "все" ]; then
-            SELECTED_INBOUNDS=(1 2 3 4 5)
-        else
-            local valid=true
-            local num s duplicate
-            for num in $input; do
-                if [[ "$num" =~ ^[1-5]$ ]]; then
-                    duplicate=false
-                    for s in "${SELECTED_INBOUNDS[@]}"; do
-                        [ "$s" = "$num" ] && duplicate=true && break
-                    done
-                    if [ "$duplicate" = false ]; then
-                        SELECTED_INBOUNDS+=("$num")
-                    fi
-                else
-                    log_error "Неверный номер: '${num}'. Допустимы: 1-5"
-                    valid=false
-                    break
-                fi
-            done
-
-            [ "$valid" = false ] && continue
-
-            if [ ${#SELECTED_INBOUNDS[@]} -eq 0 ]; then
-                log_error "Не выбрано ни одного входящего"
-                continue
-            fi
-        fi
-
-        echo ""
-        log_info "Выбранные входящие:"
-        for s in "${SELECTED_INBOUNDS[@]}"; do
-            echo -e "  ${GREEN}✓ ${INBOUND_NAMES[$((s-1))]}${NC}"
-        done
-        echo ""
-        break
-    done
+# Валидация хоста (домен или IPv4) для External Proxy.
+is_valid_host_or_ip() {
+    local host="$1"
+    [ -n "$host" ] || return 1
+    # IPv4
+    if [[ "$host" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+        local IFS=.
+        read -r a b c d <<< "$host"
+        [ "$a" -le 255 ] && [ "$b" -le 255 ] && [ "$c" -le 255 ] && [ "$d" -le 255 ] 2>/dev/null
+        return $?
+    fi
+    # Иначе домен
+    is_valid_domain "$host"
 }
 
 # ============================================================
@@ -319,14 +252,6 @@ load_config() {
         log_info "Загрузка конфигурации: ${CONFIG_FILE}"
         # shellcheck source=/dev/null
         source "$CONFIG_FILE"
-        # Восстанавливаем массив SELECTED_INBOUNDS из строки
-        if [ -n "${SELECTED_INBOUNDS:-}" ]; then
-            local saved_inbounds="${SELECTED_INBOUNDS}"
-            SELECTED_INBOUNDS=()
-            for num in $saved_inbounds; do
-                SELECTED_INBOUNDS+=("$num")
-            done
-        fi
         return 0
     fi
     log_info "Файл конфигурации не найден, будет создан при сохранении"
@@ -343,32 +268,24 @@ save_config() {
 
 DOMAIN="${DOMAIN:-}"
 EMAIL="${EMAIL:-}"
-
-# Selected inbounds (space-separated IDs: 1=VLESS TLS, 2=VLESS Reality, 3=Trojan TLS, 4=Trojan Reality, 5=Hysteria)
-SELECTED_INBOUNDS="${SELECTED_INBOUNDS[*]:-}"
+EXT_PROXY="${EXT_PROXY:-}"
 
 # Generated settings (do NOT manually edit unless you know what you're doing)
 PANEL_PORT="${PANEL_PORT:-}"
 TROJAN_PORT="${TROJAN_PORT:-}"
 TROJAN_TLS_PORT="${TROJAN_TLS_PORT:-}"
-VLESS_REALITY_PORT="${VLESS_REALITY_PORT:-}"
-HYSTERIA_PORT="${HYSTERIA_PORT:-}"
 PANEL_PATH="${PANEL_PATH:-}"
 PANEL_USER="${PANEL_USER:-}"
 PANEL_PASS="${PANEL_PASS:-}"
 SUB_ID_VLESS="${SUB_ID_VLESS:-}"
-SUB_ID_VLESS_REALITY="${SUB_ID_VLESS_REALITY:-}"
 SUB_ID_TROJAN="${SUB_ID_TROJAN:-}"
 SUB_ID_TROJAN_TLS="${SUB_ID_TROJAN_TLS:-}"
-SUB_ID_HYSTERIA="${SUB_ID_HYSTERIA:-}"
 UUID="${UUID:-}"
 PRIVATE_KEY="${PRIVATE_KEY:-}"
 PUBLIC_KEY="${PUBLIC_KEY:-}"
 SHORT_ID="${SHORT_ID:-}"
 TROJAN_PASS="${TROJAN_PASS:-}"
 TROJAN_TLS_PASS="${TROJAN_TLS_PASS:-}"
-HYSTERIA_AUTH="${HYSTERIA_AUTH:-}"
-HYSTERIA_PASS="${HYSTERIA_PASS:-}"
 TIMESTAMP="${TIMESTAMP:-}"
 INSTALLED_VERSION="${INSTALLED_VERSION:-}"
 CRED_FILE="${CRED_FILE:-/root/x-ui-setup-credentials.txt}"
