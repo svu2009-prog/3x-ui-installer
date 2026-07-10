@@ -295,6 +295,15 @@ EOF
 }
 
 # ============================================================
+# SQL ESCAPE (safe for SQLite single-quoted context)
+# ============================================================
+_sql_escape() {
+    local s="$1"
+    s="${s//\'/\'\'}"
+    printf '%s' "$s"
+}
+
+# ============================================================
 # INTERACTIVE PROMPT (with saved default)
 # ============================================================
 # prompt_with_default <prompt_text> <default> <var_name> [validator_fn]

@@ -3,7 +3,6 @@
 # 3X-UI Installer — Xray Keys + SQLite Inbounds
 # Idempotent: upserts inbounds (no duplicates)
 # ============================================================
-
 # --------------------------------------------------
 # Insert a single inbound (only if not exists — preserves existing clients)
 # --------------------------------------------------
@@ -16,13 +15,22 @@ _upsert_inbound() {
     local stream="$6"
     local sniffing="$7"
 
+    local tag_esc protocol_esc
+    tag_esc=$(_sql_escape "$tag")
+    protocol_esc=$(_sql_escape "$protocol")
+
     local existing
-    existing=$(sqlite3 "$db_path" "SELECT id FROM inbounds WHERE tag='${tag}' LIMIT 1;" 2>/dev/null || true)
+    existing=$(sqlite3 "$db_path" "SELECT id FROM inbounds WHERE tag='${tag_esc}' LIMIT 1;" 2>/dev/null || true)
 
     if [ -n "$existing" ]; then
         log_info "Inbound ${tag} уже существует, пропускаю (клиенты сохранены)"
         return 0
     fi
+
+    local settings_esc stream_esc sniffing_esc
+    settings_esc=$(_sql_escape "$settings")
+    stream_esc=$(_sql_escape "$stream")
+    sniffing_esc=$(_sql_escape "$sniffing")
 
     log_info "Создание inbound: ${tag} (порт ${port})"
     sqlite3 "$db_path" "
@@ -30,8 +38,8 @@ _upsert_inbound() {
             (user_id, up, down, total, remark, enable, expiry_time,
              listen, port, protocol, settings, stream_settings, tag, sniffing)
         VALUES
-            (1, 0, 0, 0, '${tag}', 1, 0, '',
-             ${port}, '${protocol}', '${settings}', '${stream}', '${tag}', '${sniffing}');
+            (1, 0, 0, 0, '${tag_esc}', 1, 0, '',
+             ${port}, '${protocol_esc}', '${settings_esc}', '${stream_esc}', '${tag_esc}', '${sniffing_esc}');
     "
 }
 
@@ -43,8 +51,11 @@ _update_inbound_cert() {
     local db_path="$1"
     local tag="$2"
 
+    local tag_esc
+    tag_esc=$(_sql_escape "$tag")
+
     local old_stream
-    old_stream=$(sqlite3 "$db_path" "SELECT stream_settings FROM inbounds WHERE tag='${tag}' LIMIT 1;" 2>/dev/null || true)
+    old_stream=$(sqlite3 "$db_path" "SELECT stream_settings FROM inbounds WHERE tag='${tag_esc}' LIMIT 1;" 2>/dev/null || true)
 
     if [ -z "$old_stream" ]; then
         return 0
@@ -56,7 +67,9 @@ _update_inbound_cert() {
          .tlsSettings.certificates[0].keyFile = "/etc/x-ui/ssl/privkey.pem"' 2>/dev/null || echo "$old_stream")
 
     if [ "$new_stream" != "$old_stream" ]; then
-        sqlite3 "$db_path" "UPDATE inbounds SET stream_settings='${new_stream}' WHERE tag='${tag}';"
+        local stream_esc
+        stream_esc=$(_sql_escape "$new_stream")
+        sqlite3 "$db_path" "UPDATE inbounds SET stream_settings='${stream_esc}' WHERE tag='${tag_esc}';"
         log_info "Сертификаты обновлены для inbound ${tag}"
     fi
 }
@@ -126,8 +139,15 @@ configure_inbounds() {
     backup_file "$db_path"
 
     # ---- Set SSL certs for panel web UI (copied certs, no symlinks) ----
-    sqlite3 "$db_path" "INSERT OR REPLACE INTO settings (key, value) VALUES ('webCertFile', '/etc/x-ui/ssl/fullchain.pem');"
-    sqlite3 "$db_path" "INSERT OR REPLACE INTO settings (key, value) VALUES ('webKeyFile', '/etc/x-ui/ssl/privkey.pem');"
+    # DELETE+INSERT вместо INSERT OR REPLACE, т.к. key не имеет UNIQUE constraint
+    sqlite3 "$db_path" "
+        DELETE FROM settings WHERE key = 'webCertFile';
+        INSERT INTO settings (key, value) VALUES ('webCertFile', '/etc/x-ui/ssl/fullchain.pem');
+    "
+    sqlite3 "$db_path" "
+        DELETE FROM settings WHERE key = 'webKeyFile';
+        INSERT INTO settings (key, value) VALUES ('webKeyFile', '/etc/x-ui/ssl/privkey.pem');
+    "
     log_info "SSL сертификаты панели применены"
 
     # ---- 1. VLESS TCP TLS (443) ----
@@ -137,7 +157,7 @@ configure_inbounds() {
         --arg uuid "$UUID" \
         --arg sub "$SUB_ID_VLESS" \
         --argjson ts "$TIMESTAMP" \
-        '{clients:[{id:$uuid,flow:"xtls-rprx-vision",email:"vless_tls@3x-ui",limitIp:0,totalGB:0,expiryTime:0,enable:true,tgId:0,subId:$sub,comment:"",reset:0,created_at:$ts,updated_at:$ts}],decryption:"none",encryption:"none",fallbacks:[{alpn:"",dest:"127.0.0.1:8080",name:"",path:"",xver:0}],testseed:[900,500,900,256]}')
+        '{clients:[{id:$uuid,flow:"xtls-rprx-vision",email:"vless_tls@3x-ui",limitIp:0,totalGB:0,expiryTime:0,enable:true,tgId:0,subId:$sub,comment:"",reset:0,created_at:$ts,updated_at:$ts}],fallbacks:[{alpn:"",dest:"127.0.0.1:8080",name:"",path:"",xver:0}]}')
 
     local vless_stream
     vless_stream=$(jq -nc \

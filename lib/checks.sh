@@ -68,7 +68,7 @@ inbound_exists_by_tag() {
     local tag="$2"
     [ -f "$db_path" ] || return 1
     local result
-    result=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM inbounds WHERE tag='${tag}';" 2>/dev/null)
+    result=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM inbounds WHERE tag='$(_sql_escape "$tag")';" 2>/dev/null)
     [ "$result" -gt 0 ] 2>/dev/null
 }
 
